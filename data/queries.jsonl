@@ -1,0 +1,378 @@
+{"id": "q0001", "prompt": "How do I read a CSV file in pandas?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0002", "prompt": "How do I get the current date in Python?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0003", "prompt": "What is the national bird of India?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0371"}
+{"id": "q0004", "prompt": "chemical symbol of gold?", "category": "fact", "difficulty": "easy", "dup_of": "q0286", "trap_of": null}
+{"id": "q0005", "prompt": "Classify the sentiment of these reviews as positive, negative or neutral: 1) 'Battery life is amazing.' 2) 'It broke after two days.' 3) 'It does what it says.'", "category": "summarization", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0006", "prompt": "What language is spoken in Brazil?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0007", "prompt": "How do I kill a process running on port 8000?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0008", "prompt": "Implement a token bucket rate limiter in Python that is safe to use from asyncio code.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0009", "prompt": "tips for a job interview", "category": "advice", "difficulty": "easy", "dup_of": "q0125", "trap_of": null}
+{"id": "q0010", "prompt": "Give me three tips to stay focused while studying.", "category": "advice", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0011", "prompt": "What is the default port for MySQL?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0020"}
+{"id": "q0012", "prompt": "How many different ways can 8 people sit around a round table?", "category": "math", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0013", "prompt": "fastapi cors error from react frontend, no access-control-allow-origin header, how to fix?", "category": "debugging", "difficulty": "hard", "dup_of": "q0169", "trap_of": null}
+{"id": "q0014", "prompt": "Implement an LRU cache in Python without using functools, with O(1) get and put.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0015", "prompt": "who invented the python programming language", "category": "fact", "difficulty": "easy", "dup_of": "q0208", "trap_of": null}
+{"id": "q0016", "prompt": "How do I check disk usage in Linux?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0017", "prompt": "What is the area of a circle with radius 7?", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0018", "prompt": "Write a product description for noise-cancelling headphones aimed at students.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0019", "prompt": "What year was Python 3 released?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0020", "prompt": "What is the default port for PostgreSQL?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0021", "prompt": "capital city of australia", "category": "fact", "difficulty": "easy", "dup_of": "q0343", "trap_of": null}
+{"id": "q0022", "prompt": "Design a rate limiter for an API gateway. Compare fixed window, sliding window and token bucket approaches.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0023", "prompt": "What is the square root of 169?", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": "q0351"}
+{"id": "q0024", "prompt": "Write a polite email to my manager asking for three days of leave.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": "q0092"}
+{"id": "q0025", "prompt": "What is inflation?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0026", "prompt": "Implement quicksort in Python and explain why its worst case is O(n^2).", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0027", "prompt": "What is Docker?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0028", "prompt": "how many bits in one byte", "category": "fact", "difficulty": "easy", "dup_of": "q0085", "trap_of": null}
+{"id": "q0029", "prompt": "Draft a polite resignation letter that gives four weeks' notice.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0030", "prompt": "kill process on port 8000", "category": "howto", "difficulty": "easy", "dup_of": "q0007", "trap_of": null}
+{"id": "q0031", "prompt": "python retry decorator with exponential backoff, max 3 attempts", "category": "code", "difficulty": "hard", "dup_of": "q0141", "trap_of": null}
+{"id": "q0032", "prompt": "A loan of ₹5,00,000 at 9% annual interest is repaid monthly over 5 years. What is the EMI? Show the formula.", "category": "math", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0033", "prompt": "How do I merge two dictionaries in Python?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0034", "prompt": "How do I get the current time zone in Python?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": "q0002"}
+{"id": "q0035", "prompt": "Convert 100 kilometres to miles.", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0036", "prompt": "Write a regex that validates an Indian mobile number with an optional +91 prefix, and explain each part.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0037", "prompt": "Is it ever rational to buy a lottery ticket? Argue both sides.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0038", "prompt": "git vs github", "category": "definition", "difficulty": "easy", "dup_of": "q0276", "trap_of": null}
+{"id": "q0039", "prompt": "what is an LLM?", "category": "definition", "difficulty": "easy", "dup_of": "q0291", "trap_of": null}
+{"id": "q0040", "prompt": "Which organ pumps blood through the body?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0041", "prompt": "In which year did World War I end?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0270"}
+{"id": "q0042", "prompt": "Explain gradient descent and the role of the learning rate, including what happens if it is too high or too low.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0043", "prompt": "What is SQL?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0044", "prompt": "how to boil eggs", "category": "howto", "difficulty": "easy", "dup_of": "q0146", "trap_of": null}
+{"id": "q0045", "prompt": "Who developed the theory of relativity?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0046", "prompt": "Write a Python function that checks whether a string is a valid palindrome, ignoring case and non-alphanumeric characters, with unit tests.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0047", "prompt": "what is docker used for", "category": "definition", "difficulty": "easy", "dup_of": "q0027", "trap_of": null}
+{"id": "q0048", "prompt": "What should I pack for a weekend trip to the mountains?", "category": "advice", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0049", "prompt": "How do I make a GET request in Python?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0050", "prompt": "What is the largest ocean on Earth?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0051", "prompt": "Alice is older than Bob, Carol is younger than Bob, and Dave is older than Alice. Who is the second oldest? Explain.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0052", "prompt": "Convert 30 degrees Celsius to Fahrenheit.", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0053", "prompt": "Hello there!", "category": "greeting", "difficulty": "easy", "dup_of": "q0239", "trap_of": null}
+{"id": "q0054", "prompt": "What is the tallest mountain in the world?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0055", "prompt": "Write a function to merge two sorted linked lists in Java.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0056", "prompt": "What is a virtual environment in Python?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0057", "prompt": "What is the default port for HTTP?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0168"}
+{"id": "q0058", "prompt": "Explain the difference between L1 and L2 loss and when to use each.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": "q0277"}
+{"id": "q0059", "prompt": "python list vs tuple", "category": "definition", "difficulty": "easy", "dup_of": "q0316", "trap_of": null}
+{"id": "q0060", "prompt": "How do I check which Python version I have?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0061", "prompt": "What is async/await in Python?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0062", "prompt": "DNA stands for what?", "category": "fact", "difficulty": "easy", "dup_of": "q0184", "trap_of": null}
+{"id": "q0063", "prompt": "Who was the second person to walk on the Moon?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0218"}
+{"id": "q0064", "prompt": "Is 91 a prime number?", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": "q0229"}
+{"id": "q0065", "prompt": "Write a SQL query that returns each customer's total spend per month, including months with zero spend.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0066", "prompt": "what are embeddings in ML", "category": "definition", "difficulty": "easy", "dup_of": "q0361", "trap_of": null}
+{"id": "q0067", "prompt": "Tell me a fun fact about space.", "category": "greeting", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0068", "prompt": "Who is known as the father of computers?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0069", "prompt": "Explain the plot of the Mahabharata in about 200 words.", "category": "summarization", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0070", "prompt": "How can I center a div horizontally and vertically?", "category": "howto", "difficulty": "easy", "dup_of": "q0071", "trap_of": null}
+{"id": "q0071", "prompt": "How do I center a div in CSS?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0072", "prompt": "What is the smallest planet in our solar system?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0145"}
+{"id": "q0073", "prompt": "Estimate how many piano tuners there are in Mumbai, showing each assumption.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0074", "prompt": "100 km in miles", "category": "math", "difficulty": "easy", "dup_of": "q0035", "trap_of": null}
+{"id": "q0075", "prompt": "Write a python function to check if a string is a palindrome ignoring case and punctuation, and include unit tests.", "category": "code", "difficulty": "hard", "dup_of": "q0046", "trap_of": null}
+{"id": "q0076", "prompt": "How can I sleep better at night?", "category": "advice", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0077", "prompt": "read csv with pandas", "category": "howto", "difficulty": "easy", "dup_of": "q0001", "trap_of": null}
+{"id": "q0078", "prompt": "What is an API?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0079", "prompt": "How many players are on a cricket team?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0080", "prompt": "How do I list all running Docker containers?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0081", "prompt": "json stands for?", "category": "fact", "difficulty": "easy", "dup_of": "q0104", "trap_of": null}
+{"id": "q0082", "prompt": "how many bones does an adult human have", "category": "fact", "difficulty": "easy", "dup_of": "q0303", "trap_of": null}
+{"id": "q0083", "prompt": "How do I write a for loop in Bash?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0084", "prompt": "who is the author of pride and prejudice", "category": "fact", "difficulty": "easy", "dup_of": "q0160", "trap_of": null}
+{"id": "q0085", "prompt": "How many bits are in a byte?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0086", "prompt": "what is a token in LLMs", "category": "definition", "difficulty": "easy", "dup_of": "q0213", "trap_of": null}
+{"id": "q0087", "prompt": "why is 0.1+0.2 != 0.3 in python", "category": "definition", "difficulty": "easy", "dup_of": "q0289", "trap_of": null}
+{"id": "q0088", "prompt": "What is a cross-compiler?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": "q0349"}
+{"id": "q0089", "prompt": "processes vs threads vs coroutines, when to use each, with examples", "category": "explanation", "difficulty": "hard", "dup_of": "q0346", "trap_of": null}
+{"id": "q0090", "prompt": "What does top_p do in an LLM API?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": "q0223"}
+{"id": "q0091", "prompt": "What is a hash function?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0092", "prompt": "Write a polite email to my professor asking for a three-day extension on my assignment deadline.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0093", "prompt": "What is 15% of 200?", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0094", "prompt": "How much water should I drink in a day?", "category": "advice", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0095", "prompt": "Summarise the causes of the 2008 financial crisis for a beginner.", "category": "summarization", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0096", "prompt": "Tell me a joke.", "category": "greeting", "difficulty": "easy", "dup_of": "q0109", "trap_of": null}
+{"id": "q0097", "prompt": "How do I sort a dictionary by value in Python?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0098", "prompt": "good morning in hindi", "category": "translation", "difficulty": "easy", "dup_of": "q0310", "trap_of": null}
+{"id": "q0099", "prompt": "Write a Python script to compute cosine similarity between two lists of sentence embeddings using numpy.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0100", "prompt": "What is recursion?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0101", "prompt": "Write a short story (about 400 words) about a robot who learns to cook biryani.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0102", "prompt": "2^10", "category": "math", "difficulty": "easy", "dup_of": "q0237", "trap_of": null}
+{"id": "q0103", "prompt": "How do I list all Docker images?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": "q0080"}
+{"id": "q0104", "prompt": "What does JSON stand for?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0105", "prompt": "Recommend a good book for a long train journey.", "category": "greeting", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0106", "prompt": "What is the average of 4, 8, 15, 16, 23 and 42?", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0107", "prompt": "What is the hardest natural substance?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0108", "prompt": "A bat and a ball cost $1.20 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Explain your reasoning.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": "q0196"}
+{"id": "q0109", "prompt": "Can you tell me a joke?", "category": "greeting", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0110", "prompt": "Explain BM25 and how it differs from dense vector search.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0111", "prompt": "Write a Dockerfile for a FastAPI app that uses uv and runs as a non-root user.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0112", "prompt": "What is the difference between RAM and an SSD?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": "q0285"}
+{"id": "q0113", "prompt": "What is HTTPS and why is it secure?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0114", "prompt": "what does overfitting mean", "category": "definition", "difficulty": "easy", "dup_of": "q0231", "trap_of": null}
+{"id": "q0115", "prompt": "why does this print 4 five times in python?\n\nfuncs = [lambda: i for i in range(5)]\nfor f in funcs:\n    print(f())", "category": "debugging", "difficulty": "hard", "dup_of": "q0326", "trap_of": null}
+{"id": "q0116", "prompt": "what can you do?", "category": "greeting", "difficulty": "easy", "dup_of": "q0156", "trap_of": null}
+{"id": "q0117", "prompt": "tips to sleep better", "category": "advice", "difficulty": "easy", "dup_of": "q0076", "trap_of": null}
+{"id": "q0118", "prompt": "When did India become independent?", "category": "fact", "difficulty": "easy", "dup_of": "q0172", "trap_of": null}
+{"id": "q0119", "prompt": "What is the freezing point of water in Fahrenheit?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0120", "prompt": "why is switching better in the monty hall problem", "category": "reasoning", "difficulty": "hard", "dup_of": "q0121", "trap_of": null}
+{"id": "q0121", "prompt": "Explain the Monty Hall problem and why switching doors is better.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0122", "prompt": "Prove that the cube root of 2 is irrational.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": "q0241"}
+{"id": "q0123", "prompt": "what is the temperature parameter in llms", "category": "definition", "difficulty": "easy", "dup_of": "q0223", "trap_of": null}
+{"id": "q0124", "prompt": "How do I install a package with pip?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0125", "prompt": "How do I prepare for a job interview?", "category": "advice", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0126", "prompt": "Write a FastAPI endpoint that streams a server-sent events response.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0127", "prompt": "What is a mutual fund?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0128", "prompt": "How do I undo the last git commit?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0129", "prompt": "Summarise the following in 3 bullet points:\n\nRemote work grew rapidly after 2020. Companies found that many roles could be done from home without a drop in output, and employees valued the time saved on commuting. However, managers reported that onboarding new hires and building team culture became harder, and some employees felt isolated. Many firms have now settled on hybrid models, asking staff to come into the office two or three days a week, while investing in better collaboration tools and clearer written communication.", "category": "summarization", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0130", "prompt": "How do I create a virtual environment in Python?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0131", "prompt": "What is machine learning?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0132", "prompt": "What is retrieval-augmented generation?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0133", "prompt": "What is the boiling point of water in Fahrenheit?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0318"}
+{"id": "q0134", "prompt": "Extract every date and its event from this text: 'The project kicked off on 3 March 2025. The first prototype was ready by 14 April, and the beta launched on 1 June. After feedback, version 1.0 shipped on 20 August 2025.'", "category": "summarization", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0135", "prompt": "If a model has 95% accuracy on a dataset where 95% of examples are negative, is it a good model? Explain.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0136", "prompt": "Explain machine learning in simple terms.", "category": "definition", "difficulty": "easy", "dup_of": "q0131", "trap_of": null}
+{"id": "q0137", "prompt": "Explain eigenvalues and eigenvectors with a 2x2 worked example.", "category": "math", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0138", "prompt": "which port does postgres use by default", "category": "fact", "difficulty": "easy", "dup_of": "q0020", "trap_of": null}
+{"id": "q0139", "prompt": "Write a LinkedIn post announcing that I completed my first open-source contribution.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0140", "prompt": "Compare the pros and cons of microservices versus a monolith for a 3-person startup, and give a recommendation.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0141", "prompt": "Write a Python decorator that retries a function up to 3 times with exponential backoff on exceptions.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0142", "prompt": "What is the currency of China?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0267"}
+{"id": "q0143", "prompt": "what is ML?", "category": "definition", "difficulty": "easy", "dup_of": "q0131", "trap_of": null}
+{"id": "q0144", "prompt": "How do I remove duplicates from a list in Python?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0145", "prompt": "What is the largest planet in our solar system?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0146", "prompt": "How do I boil an egg?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0147", "prompt": "This function is supposed to return the maximum, but gives wrong answers. Find the bug:\n\ndef find_max(nums):\n    best = None\n    for n in nums:\n        if best is None or n > best:\n            best = n\n        return best", "category": "debugging", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0148", "prompt": "How do I sort a dictionary by key in Python?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": "q0097"}
+{"id": "q0149", "prompt": "Write a 300-word blog post introduction about why companies need an LLM gateway.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0150", "prompt": "Write a React component for a todo list with add, delete and mark-as-done, using hooks.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0151", "prompt": "Write a Python function that splits a long text into chunks of about 500 tokens with 50 tokens of overlap.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0152", "prompt": "How many days are in a leap year?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0153", "prompt": "What is underfitting in machine learning?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": "q0231"}
+{"id": "q0154", "prompt": "what is RAG in AI", "category": "definition", "difficulty": "easy", "dup_of": "q0132", "trap_of": null}
+{"id": "q0155", "prompt": "Roughly what is the population of India?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0156", "prompt": "What can you help me with?", "category": "greeting", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0157", "prompt": "Suggest a healthy breakfast that takes under 10 minutes.", "category": "advice", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0158", "prompt": "bat and ball cost 1.10 together, the bat costs 1.00 more than the ball, how much is the ball? explain", "category": "reasoning", "difficulty": "hard", "dup_of": "q0196", "trap_of": null}
+{"id": "q0159", "prompt": "Explain the CAP theorem with real database examples.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0160", "prompt": "Who wrote Pride and Prejudice?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0161", "prompt": "hi there", "category": "greeting", "difficulty": "easy", "dup_of": "q0239", "trap_of": null}
+{"id": "q0162", "prompt": "Implement Dijkstra's shortest path algorithm in Python using a heap.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0163", "prompt": "How can I reverse a string using Python?", "category": "howto", "difficulty": "easy", "dup_of": "q0225", "trap_of": null}
+{"id": "q0164", "prompt": "Who invented the telephone?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0165", "prompt": "what does GDP mean", "category": "definition", "difficulty": "easy", "dup_of": "q0375", "trap_of": null}
+{"id": "q0166", "prompt": "Solve the system of equations: 3x + 2y = 16 and 5x + y = 18.", "category": "math", "difficulty": "hard", "dup_of": null, "trap_of": "q0240"}
+{"id": "q0167", "prompt": "numpy code for cosine similarity between two sets of embeddings", "category": "code", "difficulty": "hard", "dup_of": "q0099", "trap_of": null}
+{"id": "q0168", "prompt": "What is the default port for HTTPS?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0169", "prompt": "I get 'CORS policy: No Access-Control-Allow-Origin header' when calling my FastAPI backend from React. How do I fix it?", "category": "debugging", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0170", "prompt": "Explain in detail what happens when you type a URL into a browser and press Enter.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0171", "prompt": "What is the probability of getting exactly one six when rolling four dice?", "category": "math", "difficulty": "hard", "dup_of": null, "trap_of": "q0378"}
+{"id": "q0172", "prompt": "What year did India gain independence?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0173", "prompt": "What is a black hole?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0174", "prompt": "What is a neural network?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0175", "prompt": "Implement a trie in Python with insert, search and starts_with methods.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0176", "prompt": "If it takes 5 machines 5 minutes to make 5 widgets, how long would it take 1 machine to make 100 widgets?", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": "q0211"}
+{"id": "q0177", "prompt": "My Python script uses 100% of one CPU core but threading doesn't speed it up. Why, and what should I use instead?", "category": "debugging", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0178", "prompt": "how to undo last commit in git", "category": "howto", "difficulty": "easy", "dup_of": "q0128", "trap_of": null}
+{"id": "q0179", "prompt": "What is the binary representation of 12?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0356"}
+{"id": "q0180", "prompt": "Rewrite this paragraph to be more concise and professional: 'So basically we kind of had a lot of issues with the deployment and stuff, and it took like forever to fix, but now it is mostly working I think.'", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0181", "prompt": "What are the trade-offs between fine-tuning an LLM and using retrieval-augmented generation for a company knowledge base?", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0182", "prompt": "write a cover letter for an entry level AI engineer job at a fintech startup, mention my LLM gateway project", "category": "writing", "difficulty": "hard", "dup_of": "q0219", "trap_of": null}
+{"id": "q0183", "prompt": "binary search implementation in python with time complexity", "category": "code", "difficulty": "hard", "dup_of": "q0269", "trap_of": null}
+{"id": "q0184", "prompt": "What does DNA stand for?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0185", "prompt": "Find the derivative of f(x) = x^3 * sin(x) and explain each step.", "category": "math", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0186", "prompt": "Simplify the fraction 48/64.", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0187", "prompt": "Translate the following into Hindi:\n\nRemote work grew rapidly after 2020. Companies found that many roles could be done from home without a drop in output, and employees valued the time saved on commuting. However, managers reported that onboarding new hires and building team culture became harder, and some employees felt isolated. Many firms have now settled on hybrid models, asking staff to come into the office two or three days a week, while investing in better collaboration tools and clearer written communication.", "category": "summarization", "difficulty": "hard", "dup_of": null, "trap_of": "q0129"}
+{"id": "q0188", "prompt": "Summarise the key ideas of the book 'Atomic Habits' in five bullet points.", "category": "summarization", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0189", "prompt": "who first walked on the moon", "category": "fact", "difficulty": "easy", "dup_of": "q0218", "trap_of": null}
+{"id": "q0190", "prompt": "Explain how Python's GIL affects multithreaded programs.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0191", "prompt": "What is a vector database?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0192", "prompt": "how to make a python venv", "category": "howto", "difficulty": "easy", "dup_of": "q0130", "trap_of": null}
+{"id": "q0193", "prompt": "what happens when you type a url in the browser and hit enter, in detail", "category": "explanation", "difficulty": "hard", "dup_of": "q0170", "trap_of": null}
+{"id": "q0194", "prompt": "Write a Python async function that fetches 50 URLs concurrently, at most 10 at a time, using httpx.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0195", "prompt": "A train leaves Delhi at 6 AM at 80 km/h and another leaves Agra at 7 AM at 100 km/h towards Delhi. The cities are 230 km apart. When and where do they meet?", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0196", "prompt": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Explain your reasoning.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0197", "prompt": "What is the capital of Germany?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0204"}
+{"id": "q0198", "prompt": "What is Kubernetes, in one sentence?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0199", "prompt": "How do I convert an integer to a string in JavaScript?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": "q0309"}
+{"id": "q0200", "prompt": "How many planets are in the solar system?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0201", "prompt": "Who wrote Pride and Prejudice and Zombies?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0160"}
+{"id": "q0202", "prompt": "explain recursion", "category": "definition", "difficulty": "easy", "dup_of": "q0100", "trap_of": null}
+{"id": "q0203", "prompt": "Write a Python class for a bank account with deposit, withdraw and a transaction history, and handle overdraft errors.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0204", "prompt": "What is the capital of France?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0205", "prompt": "how many days does a leap year have", "category": "fact", "difficulty": "easy", "dup_of": "q0152", "trap_of": null}
+{"id": "q0206", "prompt": "Write a Bash script that backs up a directory to a timestamped tar.gz file and deletes backups older than 7 days.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0207", "prompt": "How do I rename a git branch?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0208", "prompt": "Who created Python?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0209", "prompt": "how to stay focused while studying", "category": "advice", "difficulty": "easy", "dup_of": "q0010", "trap_of": null}
+{"id": "q0210", "prompt": "good morning, how are you?", "category": "greeting", "difficulty": "easy", "dup_of": "q0348", "trap_of": null}
+{"id": "q0211", "prompt": "If it takes 5 machines 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets?", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0212", "prompt": "What time zone is India in?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0213", "prompt": "What is a token in the context of LLMs?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0214", "prompt": "Translate 'I love programming' into Spanish.", "category": "translation", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0215", "prompt": "Write a Go HTTP server with a /health endpoint and graceful shutdown.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0216", "prompt": "css center a div", "category": "howto", "difficulty": "easy", "dup_of": "q0071", "trap_of": null}
+{"id": "q0217", "prompt": "Explain why building a heap takes O(n) time and not O(n log n).", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0218", "prompt": "Who was the first person to walk on the Moon?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0219", "prompt": "Write a cover letter for an entry-level AI engineer role at a fintech startup, highlighting a project that built an LLM gateway.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0220", "prompt": "What does HTTP stand for?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0221", "prompt": "Which is the highest mountain on Earth?", "category": "fact", "difficulty": "easy", "dup_of": "q0054", "trap_of": null}
+{"id": "q0222", "prompt": "How many continents are there?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0223", "prompt": "What does temperature do in an LLM API?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0224", "prompt": "sqrt of 144", "category": "math", "difficulty": "easy", "dup_of": "q0351", "trap_of": null}
+{"id": "q0225", "prompt": "How do I reverse a string in Python?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0226", "prompt": "What is 25% of 200?", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": "q0093"}
+{"id": "q0227", "prompt": "What is the largest desert in the world?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0228", "prompt": "What is a CDN?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0229", "prompt": "Is 97 a prime number?", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0230", "prompt": "What is the smallest ocean on Earth?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0050"}
+{"id": "q0231", "prompt": "What is overfitting in machine learning?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0232", "prompt": "speed of light in vacuum", "category": "fact", "difficulty": "easy", "dup_of": "q0368", "trap_of": null}
+{"id": "q0233", "prompt": "Explain how the transformer attention mechanism works, including queries, keys and values, with a small numeric example.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0234", "prompt": "Write a SQL query to find the third highest salary from an employees table.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": "q0252"}
+{"id": "q0235", "prompt": "what language do people speak in brazil", "category": "fact", "difficulty": "easy", "dup_of": "q0006", "trap_of": null}
+{"id": "q0236", "prompt": "How do I say thank you in Japanese?", "category": "translation", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0237", "prompt": "What is 2 to the power of 10?", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0238", "prompt": "Write a FastAPI endpoint that accepts a file upload, validates it is a CSV under 5 MB, and returns the row count.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0239", "prompt": "Hi there!", "category": "greeting", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0240", "prompt": "Solve the system of equations: 3x + 2y = 16 and 5x - y = 18.", "category": "math", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0241", "prompt": "Prove that the square root of 2 is irrational.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0242", "prompt": "Explain how HTTPS establishes a secure connection, step by step, from the TLS handshake to encrypted data.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0243", "prompt": "How many players are on a football team?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0079"}
+{"id": "q0244", "prompt": "git says 'refusing to merge unrelated histories'. What does that mean and how should I resolve it safely?", "category": "debugging", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0245", "prompt": "Write an apology message to a customer whose order arrived two weeks late.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0246", "prompt": "reverse a string in python", "category": "howto", "difficulty": "easy", "dup_of": "q0225", "trap_of": null}
+{"id": "q0247", "prompt": "how to screenshot on windows", "category": "howto", "difficulty": "easy", "dup_of": "q0259", "trap_of": null}
+{"id": "q0248", "prompt": "What language is spoken in Argentina?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0006"}
+{"id": "q0249", "prompt": "How do I poach an egg?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": "q0146"}
+{"id": "q0250", "prompt": "docker container exits right away with code 0, how to debug?", "category": "debugging", "difficulty": "hard", "dup_of": "q0295", "trap_of": null}
+{"id": "q0251", "prompt": "How many seconds are in a day?", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0252", "prompt": "Write a SQL query to find the second highest salary from an employees table.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0253", "prompt": "who painted mona lisa", "category": "fact", "difficulty": "easy", "dup_of": "q0292", "trap_of": null}
+{"id": "q0254", "prompt": "How do I exit Vim?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0255", "prompt": "Write a limerick about monsoon rain in Mumbai.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": "q0311"}
+{"id": "q0256", "prompt": "Thanks, that was really helpful.", "category": "greeting", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0257", "prompt": "What is a prompt injection attack?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0258", "prompt": "What does 'carpe diem' mean?", "category": "translation", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0259", "prompt": "How do I take a screenshot on Windows?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0260", "prompt": "How do I take a screenshot on a Mac?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": "q0259"}
+{"id": "q0261", "prompt": "What year did India become a republic?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0172"}
+{"id": "q0262", "prompt": "Write a README introduction for an open-source Python library that validates Indian GST numbers.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0263", "prompt": "Explain how consistent hashing works and why it is useful for caches.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0264", "prompt": "who came up with the theory of relativity", "category": "fact", "difficulty": "easy", "dup_of": "q0045", "trap_of": null}
+{"id": "q0265", "prompt": "What does CPU stand for?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0266", "prompt": "boiling point of water in celsius", "category": "fact", "difficulty": "easy", "dup_of": "q0318", "trap_of": null}
+{"id": "q0267", "prompt": "What is the currency of Japan?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0268", "prompt": "implement an LRU cache in python with O(1) get and put, no functools", "category": "code", "difficulty": "hard", "dup_of": "q0014", "trap_of": null}
+{"id": "q0269", "prompt": "Implement binary search in Python and explain its time complexity.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0270", "prompt": "In which year did World War II end?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0271", "prompt": "Postgres says 'too many connections' under load from my FastAPI app. What is happening and how do I fix it?", "category": "debugging", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0272", "prompt": "solve 3x+2y=16 and 5x-y=18", "category": "math", "difficulty": "hard", "dup_of": "q0240", "trap_of": null}
+{"id": "q0273", "prompt": "linux command for disk usage", "category": "howto", "difficulty": "easy", "dup_of": "q0016", "trap_of": null}
+{"id": "q0274", "prompt": "Convert 100 miles to kilometres.", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": "q0035"}
+{"id": "q0275", "prompt": "What is the difference between TCP and UDP?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0276", "prompt": "What is the difference between Git and GitHub?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0277", "prompt": "Explain the difference between L1 and L2 regularization and when to use each.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0278", "prompt": "summarize atomic habits in 5 bullets", "category": "summarization", "difficulty": "hard", "dup_of": "q0188", "trap_of": null}
+{"id": "q0279", "prompt": "What is the main gas in Earth's atmosphere?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0280", "prompt": "Translate 'good night' into Hindi.", "category": "translation", "difficulty": "easy", "dup_of": null, "trap_of": "q0310"}
+{"id": "q0281", "prompt": "python remove duplicates from list", "category": "howto", "difficulty": "easy", "dup_of": "q0144", "trap_of": null}
+{"id": "q0282", "prompt": "sql query for second highest salary in employees table", "category": "code", "difficulty": "hard", "dup_of": "q0252", "trap_of": null}
+{"id": "q0283", "prompt": "I get 'RuntimeError: Event loop is closed' when running my asyncio tests with pytest. What causes this and how do I fix it?", "category": "debugging", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0284", "prompt": "My React component re-renders infinitely after I added a useEffect that sets state. What is wrong?", "category": "debugging", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0285", "prompt": "What is the difference between RAM and ROM?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0286", "prompt": "What is the chemical symbol for gold?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0287", "prompt": "What is two-factor authentication?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0288", "prompt": "How do I find a file by name in Linux?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0289", "prompt": "Why does 0.1 + 0.2 not equal 0.3 in Python?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0290", "prompt": "Explain how a B-tree index speeds up database queries and when it does not help.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0291", "prompt": "What is a large language model?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0292", "prompt": "Who painted the Mona Lisa?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0293", "prompt": "How do I reverse a list in Python?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": "q0225"}
+{"id": "q0294", "prompt": "summarize this in three bullets:\n\nRemote work grew rapidly after 2020. Companies found that many roles could be done from home without a drop in output, and employees valued the time saved on commuting. However, managers reported that onboarding new hires and building team culture became harder, and some employees felt isolated. Many firms have now settled on hybrid models, asking staff to come into the office two or three days a week, while investing in better collaboration tools and clearer written communication.", "category": "summarization", "difficulty": "hard", "dup_of": "q0129", "trap_of": null}
+{"id": "q0295", "prompt": "My Docker container exits immediately after starting with exit code 0. How do I debug it?", "category": "debugging", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0296", "prompt": "what is 2FA", "category": "definition", "difficulty": "easy", "dup_of": "q0287", "trap_of": null}
+{"id": "q0297", "prompt": "Explain how you would design a semantic cache for LLM responses, including how to avoid returning wrong answers.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0298", "prompt": "How do you say 'thank you' in Tamil?", "category": "translation", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0299", "prompt": "Should a small team choose PostgreSQL or MongoDB for an e-commerce app? Justify with trade-offs.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0300", "prompt": "Explain how a vector index like HNSW finds nearest neighbours quickly.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0301", "prompt": "Write a pytest fixture that starts a temporary Postgres database for integration tests.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0302", "prompt": "default https port?", "category": "fact", "difficulty": "easy", "dup_of": "q0168", "trap_of": null}
+{"id": "q0303", "prompt": "How many bones are in the adult human body?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0304", "prompt": "What is an IP address?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0305", "prompt": "what is an api", "category": "definition", "difficulty": "easy", "dup_of": "q0078", "trap_of": null}
+{"id": "q0306", "prompt": "python sort dict by value", "category": "howto", "difficulty": "easy", "dup_of": "q0097", "trap_of": null}
+{"id": "q0307", "prompt": "python http get request example", "category": "howto", "difficulty": "easy", "dup_of": "q0049", "trap_of": null}
+{"id": "q0308", "prompt": "what timezone is india in", "category": "fact", "difficulty": "easy", "dup_of": "q0212", "trap_of": null}
+{"id": "q0309", "prompt": "How do I convert a string to an integer in JavaScript?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0310", "prompt": "Translate 'good morning' into Hindi.", "category": "translation", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0311", "prompt": "Write a haiku about monsoon rain in Mumbai.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0312", "prompt": "draft a polite email to my professor asking for a 3-day extension on an assignment", "category": "writing", "difficulty": "hard", "dup_of": "q0092", "trap_of": null}
+{"id": "q0313", "prompt": "how many continents are there on earth", "category": "fact", "difficulty": "easy", "dup_of": "q0222", "trap_of": null}
+{"id": "q0314", "prompt": "explain transformer self attention with queries keys and values and a small numerical example", "category": "explanation", "difficulty": "hard", "dup_of": "q0233", "trap_of": null}
+{"id": "q0315", "prompt": "Integrate x * e^x dx, showing the steps.", "category": "math", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0316", "prompt": "What is the difference between a list and a tuple in Python?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0317", "prompt": "What is the cloud in computing?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0318", "prompt": "What is the boiling point of water in Celsius?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0319", "prompt": "What is the chemical symbol for silver?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0286"}
+{"id": "q0320", "prompt": "What is the latest stable version of Python?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0321", "prompt": "My pandas merge is producing many more rows than either input table. Why?", "category": "debugging", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0322", "prompt": "how to quit vim", "category": "howto", "difficulty": "easy", "dup_of": "q0254", "trap_of": null}
+{"id": "q0323", "prompt": "Prove that there are infinitely many prime numbers.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0324", "prompt": "How would you detect whether a user's prompt is a jailbreak attempt? Propose a layered approach.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0325", "prompt": "What is the difference between a list and a set in Python?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": "q0316"}
+{"id": "q0326", "prompt": "Why does this Python code print 4 five times?\n\nfuncs = [lambda: i for i in range(5)]\nfor f in funcs:\n    print(f())", "category": "debugging", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0327", "prompt": "What is the tallest mountain in India?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0054"}
+{"id": "q0328", "prompt": "How do I make a cup of masala chai?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0329", "prompt": "Which planet is the biggest in the solar system?", "category": "fact", "difficulty": "easy", "dup_of": "q0145", "trap_of": null}
+{"id": "q0330", "prompt": "Convert this Python 2 code to Python 3:\n\nprint 'hello'\nd = {}\nif d.has_key('a'):\n    print d['a']", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0331", "prompt": "Translate 'where is the train station?' into French.", "category": "translation", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0332", "prompt": "how many planets are there in our solar system", "category": "fact", "difficulty": "easy", "dup_of": "q0200", "trap_of": null}
+{"id": "q0333", "prompt": "tcp vs udp", "category": "definition", "difficulty": "easy", "dup_of": "q0275", "trap_of": null}
+{"id": "q0334", "prompt": "Design a URL shortener: describe the API, data model, how you generate short codes, and how it scales to 1,000 requests per second.", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0335", "prompt": "docker command to list running containers", "category": "howto", "difficulty": "easy", "dup_of": "q0080", "trap_of": null}
+{"id": "q0336", "prompt": "How do I find the length of a list in Python?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0337", "prompt": "What is the longest river in the world?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0338", "prompt": "How long should I cook rice in a pressure cooker?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0339", "prompt": "Explain how garbage collection works in Python, including reference counting and the cyclic collector.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0340", "prompt": "Explain how JWT authentication works and its main security pitfalls.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0341", "prompt": "How do I undo the last git push?", "category": "howto", "difficulty": "easy", "dup_of": null, "trap_of": "q0128"}
+{"id": "q0342", "prompt": "What is a REST API?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0343", "prompt": "What is the capital of Australia?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0344", "prompt": "Write a farewell speech of about 200 words for my college batch.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0345", "prompt": "how to check python version", "category": "howto", "difficulty": "easy", "dup_of": "q0060", "trap_of": null}
+{"id": "q0346", "prompt": "Explain the difference between processes, threads and coroutines, with examples of when to use each.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0347", "prompt": "What is the largest city in Australia?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0343"}
+{"id": "q0348", "prompt": "Good morning! How are you today?", "category": "greeting", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0349", "prompt": "What is a compiler?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0350", "prompt": "You have 8 balls, one of which is slightly heavier. Using a balance scale only twice, how do you find the heavier ball?", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0351", "prompt": "What is the square root of 144?", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0352", "prompt": "what is photosynthesis", "category": "definition", "difficulty": "easy", "dup_of": "q0362", "trap_of": null}
+{"id": "q0353", "prompt": "15 percent of 200", "category": "math", "difficulty": "easy", "dup_of": "q0093", "trap_of": null}
+{"id": "q0354", "prompt": "Explain how backpropagation computes gradients in a neural network, using the chain rule.", "category": "explanation", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0355", "prompt": "Calculate the compound interest on ₹1,00,000 at 7% per year compounded quarterly for 3 years.", "category": "math", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0356", "prompt": "What is the binary representation of 10?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0357", "prompt": "Why is my SQL query with a LIKE '%term%' filter slow on a table with 10 million rows, and how can I speed it up?", "category": "debugging", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0358", "prompt": "Say something motivational for a Monday morning.", "category": "greeting", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0359", "prompt": "postgres vs mongodb for an e-commerce app built by a small team, which and why?", "category": "reasoning", "difficulty": "hard", "dup_of": "q0299", "trap_of": null}
+{"id": "q0360", "prompt": "Write a Python script that reads a large log file line by line and counts the top 10 most frequent IP addresses.", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0361", "prompt": "What is an embedding in machine learning?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0362", "prompt": "Define photosynthesis.", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0363", "prompt": "what currency does japan use", "category": "fact", "difficulty": "easy", "dup_of": "q0267", "trap_of": null}
+{"id": "q0364", "prompt": "capital of france?", "category": "fact", "difficulty": "easy", "dup_of": "q0204", "trap_of": null}
+{"id": "q0365", "prompt": "Which city is the capital of France?", "category": "fact", "difficulty": "easy", "dup_of": "q0204", "trap_of": null}
+{"id": "q0366", "prompt": "What is 12 times 13?", "category": "math", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0367", "prompt": "Three friends split a restaurant bill of ₹2,850 including a 10% service charge. One friend didn't eat the ₹300 dessert. How should they split it fairly?", "category": "reasoning", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0368", "prompt": "What is the speed of light in a vacuum?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0369", "prompt": "Implement mergesort in Python and explain why it is always O(n log n).", "category": "code", "difficulty": "hard", "dup_of": null, "trap_of": "q0026"}
+{"id": "q0370", "prompt": "Write a project proposal outline for a college hackathon app that helps students find study partners.", "category": "writing", "difficulty": "hard", "dup_of": null, "trap_of": null}
+{"id": "q0371", "prompt": "What is the national animal of India?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0372", "prompt": "when did world war 2 end", "category": "fact", "difficulty": "easy", "dup_of": "q0270", "trap_of": null}
+{"id": "q0373", "prompt": "What does inflation mean in economics?", "category": "definition", "difficulty": "easy", "dup_of": "q0025", "trap_of": null}
+{"id": "q0374", "prompt": "What is Git?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0375", "prompt": "What is GDP?", "category": "definition", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0376", "prompt": "What's a good name for a pet goldfish?", "category": "greeting", "difficulty": "easy", "dup_of": null, "trap_of": null}
+{"id": "q0377", "prompt": "What does GPU stand for?", "category": "fact", "difficulty": "easy", "dup_of": null, "trap_of": "q0265"}
+{"id": "q0378", "prompt": "What is the probability of getting at least one six when rolling four dice?", "category": "math", "difficulty": "hard", "dup_of": null, "trap_of": null}
