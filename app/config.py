@@ -21,6 +21,11 @@ class Settings(BaseSettings):
 
     request_timeout_s: float = 30.0
 
+    # Which provider serves /v1/chat/completions. "mock" needs no keys (demos, local dev).
+    provider: Literal["groq", "mock"] = "groq"
+    mock_latency_s: float = 0.0
+    mock_failure_rate: float = 0.0
+
 
 @lru_cache
 def get_settings() -> Settings:

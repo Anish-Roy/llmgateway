@@ -3,7 +3,7 @@
 An OpenAI-compatible proxy in front of multiple LLM providers, with fallback, per-key rate
 limits, exact and semantic caching, PII masking and a cost dashboard.
 
-Status: Phase 0 (project setup). See [plan.md](plan.md) for the roadmap.
+Status: Phase 1 (non-streaming proxy to Groq, plus a mock provider). See [plan.md](plan.md) for the roadmap.
 
 ## Quick start
 
@@ -14,6 +14,13 @@ docker compose up -d                      # Postgres 17 + pgvector on localhost:
 uv run uvicorn app.main:app --reload      # http://localhost:8000/health
 uv run pytest
 uv run ruff check .
+```
+
+Try it with the official `openai` SDK (needs `GROQ_API_KEY` in `.env`, or set `PROVIDER=mock`
+to run without any keys):
+
+```bash
+uv run python scripts/smoke_openai_sdk.py
 ```
 
 ## Layout
