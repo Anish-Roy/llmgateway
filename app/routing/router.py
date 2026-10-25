@@ -63,6 +63,14 @@ class ModelRouter:
         # Injectable so tests don't actually wait.
         self._sleep = sleep
 
+    def available_aliases(self) -> list[str]:
+        """Aliases with at least one configured provider, for GET /v1/models."""
+        return [
+            alias
+            for alias, targets in self._aliases.items()
+            if any(t.provider in self._providers for t in targets)
+        ]
+
     def targets(self, alias: str) -> list[Target]:
         if alias not in self._aliases:
             raise ModelNotFoundError(alias)

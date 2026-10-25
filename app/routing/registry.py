@@ -11,6 +11,11 @@ class GroqSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["groq"]
+    # For reasoning models (gpt-oss). Reasoning counts against max_tokens, and
+    # include_reasoning=false keeps the reasoning text out of replies (like Gemini's thoughts).
+    # A client that sends either field overrides these.
+    reasoning_effort: Literal["low", "medium", "high"] | None = None
+    include_reasoning: bool | None = None
 
 
 class GeminiSpec(BaseModel):

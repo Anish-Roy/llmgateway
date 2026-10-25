@@ -48,6 +48,18 @@ class ChatResponse(BaseModel):
     usage: Usage = Field(default_factory=Usage)
 
 
+class Model(BaseModel):
+    id: str
+    object: Literal["model"] = "model"
+    created: int = 0
+    owned_by: str = "llm-gateway"
+
+
+class ModelList(BaseModel):
+    object: Literal["list"] = "list"
+    data: list[Model]
+
+
 class ErrorDetail(BaseModel):
     message: str
     type: str

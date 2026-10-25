@@ -89,9 +89,25 @@ One entry per phase: what was chosen, and why.
   what makes this a gateway. The docs now label `generateContent` "Legacy" next to the newer
   Interactions API, but it still works and has no shutdown date (checked 2026-10-25). Moving
   to the Interactions API would only change the adapter.
-- **Model IDs checked 2026-10-25.** The Gemini 2.5 models are limited to accounts that used
-  them before, so `fast` falls back to `gemini-3.5-flash-lite` and `strong` starts on
-  `gemini-3.8-flash`, with `llama-3.3-70b-versatile` on Groq as its fallback.
+- **Models are chosen from what our keys can actually use, not from docs pages.**
+  `scripts/check_models.py` compares the registry with each provider's model list.
+  On 2026-10-25:
+  - **Groq's Llama models weren't available to our free key.** Asking for one returned a 404
+    `model_not_found`. The production chat models we could use were `openai/gpt-oss-20b` and
+    `-120b`.
+  - **Gemini 2.5 is limited to accounts that used it before.**
+  - **Result:** `fast` = gpt-oss-20b → gemini-3.5-flash-lite, `strong` = gpt-oss-120b →
+    gemini-3.8-flash.
+- **`strong` puts Groq first, because live testing said so.** gemini-3.8-flash timed out on
+  5 of 6 calls and gave a 503 "high demand" on the sixth, so with it first every `strong`
+  request waited 30 s before falling back. Fallback hid the outage, but only by adding latency.
+  A per-provider timeout or Phase 3's time-to-first-token fallback would cut that wait.
+- **Groq provider options `reasoning_effort` and `include_reasoning`, applied only when the
+  client didn't send them.** gpt-oss reasons before answering, and the reasoning counts
+  against `max_tokens`. At Groq's default effort, a 50-token request came back with an empty
+  answer (`finish_reason: "length"`). At `low`, the answer fits. `include_reasoning: false`
+  leaves the `reasoning` text out of the reply, matching how the Gemini adapter drops
+  thought parts.
 - **Thinking tokens count as completion tokens.** Gemini bills `thoughtsTokenCount` as output,
   and they count against `maxOutputTokens`. Leaving them out would make Phase 5 costs too low.
   Thought parts (`thought: true`) are left out of the reply text. Each Gemini provider entry
@@ -120,3 +136,13 @@ One entry per phase: what was chosen, and why.
   `tools` request would get Gemini's 400 and never reach Groq, which supports it. A real
   upstream 400 (the request is bad) still goes straight back. If every provider says
   "can't", the client gets the 400.
+- **`GET /v1/models` lists aliases, not vendor models,** and only the ones this deployment can
+  serve, so `client.models.list()` shows what's worth sending.
+- **The "done when" check, with real providers (2026-10-25):**
+  - `fast` was served by Groq.
+  - A Groq model the key can't use (404) fell back to Gemini in 2 attempts, without a retry.
+  - A `tools` request with Gemini first fell back to Groq, which returned a proper `tool_calls`
+    reply.
+  - Gemini followed a system prompt.
+  - The same fallbacks are also covered offline by `tests/test_provider_fallback.py`, which
+    runs the real adapters over a faked transport.

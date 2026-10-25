@@ -37,7 +37,12 @@ def build_providers(
                 if not settings.groq_api_key:
                     logger.warning("GROQ_API_KEY is not set: skipping provider %r", name)
                     continue
-                providers[name] = GroqProvider(client, settings.groq_api_key.get_secret_value())
+                providers[name] = GroqProvider(
+                    client,
+                    settings.groq_api_key.get_secret_value(),
+                    reasoning_effort=spec.reasoning_effort,
+                    include_reasoning=spec.include_reasoning,
+                )
             case GeminiSpec():
                 if not settings.gemini_api_key:
                     logger.warning("GEMINI_API_KEY is not set: skipping provider %r", name)

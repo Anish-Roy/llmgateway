@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response
 
 from app.api.errors import error_response
-from app.api.schemas import ChatRequest, ChatResponse
+from app.api.schemas import ChatRequest, ChatResponse, Model, ModelList
 from app.routing.router import ModelRouter
 
 router = APIRouter(prefix="/v1")
@@ -29,3 +29,9 @@ async def chat_completions(
     response.headers["x-gateway-attempts"] = str(routed.attempts)
     response.headers["x-gateway-fallback"] = "true" if routed.fallback else "false"
     return routed.response
+
+
+@router.get("/models", response_model=ModelList)
+async def list_models(model_router: Annotated[ModelRouter, Depends(get_model_router)]):
+    # The aliases clients can send as `model`, not the vendor models behind them.
+    return ModelList(data=[Model(id=alias) for alias in model_router.available_aliases()])

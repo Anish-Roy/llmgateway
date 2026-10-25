@@ -170,3 +170,42 @@ async def test_missing_or_retired_model_becomes_a_502_that_falls_back(response):
     assert err.status == 502
     assert err.retryable
     assert not err.retry_same_provider
+
+
+async def test_reasoning_defaults_are_sent_unless_the_client_sets_them():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.read()))
+        return httpx.Response(200, json=GROQ_OK)
+
+    provider = GroqProvider(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        "gsk-test",
+        reasoning_effort="low",
+        include_reasoning=False,
+    )
+
+    await provider.chat(REQUEST)
+    await provider.chat(
+        ChatRequest.model_validate(
+            REQUEST.model_dump() | {"reasoning_effort": "high", "include_reasoning": True}
+        )
+    )
+
+    assert (seen[0]["reasoning_effort"], seen[0]["include_reasoning"]) == ("low", False)
+    # The client's own values win.
+    assert (seen[1]["reasoning_effort"], seen[1]["include_reasoning"]) == ("high", True)
+
+
+async def test_no_reasoning_fields_without_defaults():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.read())
+        return httpx.Response(200, json=GROQ_OK)
+
+    await provider_with(handler).chat(REQUEST)
+
+    assert "reasoning_effort" not in seen["body"]
+    assert "include_reasoning" not in seen["body"]

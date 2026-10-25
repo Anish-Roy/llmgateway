@@ -13,10 +13,27 @@ class GroqProvider:
 
     name = "groq"
 
-    def __init__(self, client: httpx.AsyncClient, api_key: str | None) -> None:
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        api_key: str | None,
+        reasoning_effort: str | None = None,
+        include_reasoning: bool | None = None,
+    ) -> None:
         # The client is shared and owned by the app (see main.lifespan), not created per request.
         self._client = client
         self._api_key = api_key
+        # Defaults for reasoning models (gpt-oss), used only when the client didn't send them.
+        # Reasoning tokens count against max_tokens: at Groq's default effort a 50-token
+        # request can end with an empty answer.
+        self._defaults = {
+            k: v
+            for k, v in {
+                "reasoning_effort": reasoning_effort,
+                "include_reasoning": include_reasoning,
+            }.items()
+            if v is not None
+        }
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         if not self._api_key:
@@ -28,7 +45,7 @@ class GroqProvider:
                 retry_same_provider=False,
             )
 
-        body = request.model_dump(exclude_none=True)
+        body = self._defaults | request.model_dump(exclude_none=True)
         try:
             resp = await self._client.post(
                 f"{GROQ_BASE_URL}/chat/completions",

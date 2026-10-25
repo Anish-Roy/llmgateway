@@ -7,12 +7,17 @@
 #            The text after the first "/" is the provider's own model name, so it may contain
 #            more slashes.
 
-# Model IDs checked on 2026-10-25 against console.groq.com/docs/models and
-# ai.google.dev/gemini-api/docs/models. Providers retire models often: recheck them.
+# Model IDs checked on 2026-10-25 against each provider's model list, using our keys.
+# Providers retire models and change free-tier access often: recheck with
+#   uv run python -m scripts.check_models
 
 providers:
+  # gpt-oss models reason before answering, and that counts against max_tokens. At "low" a
+  # short answer fits in a small max_tokens; the reasoning text is left out of the reply.
   groq:
     type: groq
+    reasoning_effort: low
+    include_reasoning: false
   gemini:
     type: gemini
   mock:
@@ -25,12 +30,15 @@ providers:
 aliases:
   # Cheap and quick. Flash-Lite thinks at "minimal" by default, so max_tokens stays for the answer.
   fast:
-    - groq/llama-3.1-8b-instant
+    - groq/openai/gpt-oss-20b
     - gemini/gemini-3.5-flash-lite
-  # Better answers, slower and pricier. Gemini 3.8 Flash thinks at "medium" by default.
+  # Better answers, slower and pricier. Groq goes first: on 2026-10-25 gemini-3.8-flash timed
+  # out on 5 of 6 calls and answered the other with a 503 "high demand", so as the first
+  # choice it cost every request a 30 s wait. Swap back once it answers reliably.
+  # Gemini 3.8 Flash thinks at "medium" by default.
   strong:
+    - groq/openai/gpt-oss-120b
     - gemini/gemini-3.8-flash
-    - groq/llama-3.3-70b-versatile
   mock:
     - mock/mock-model
   # Fallback demo with no keys: flaky fails (and is retried once), mock answers.
