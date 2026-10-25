@@ -80,6 +80,10 @@ def _vector_literal(embedding: np.ndarray) -> str:
 
 _ENTRY_COLUMNS = "alias, response, provider, model, cost_usd, created_at, expires_at"
 
+# Candidates fetched from the index and re-sorted exactly. A few are enough for "slightly out
+# of order"; each costs one more row read.
+_CANDIDATES = 10
+
 
 class PostgresSemanticStore:
     def __init__(self, pool: AsyncConnectionPool) -> None:
@@ -92,14 +96,21 @@ class PostgresSemanticStore:
         async with self.pool.connection() as conn:
             # The HNSW index finds candidates first and filters after; with entries scoped
             # per key, a first batch from other keys would leave nothing. An iterative scan
-            # keeps going until a row passes (pgvector 0.8+). For this transaction only.
+            # keeps going until enough rows pass (pgvector 0.8+). For this transaction only.
             await conn.execute("SET LOCAL hnsw.iterative_scan = relaxed_order")
+            # Relaxed order finds more but may return rows slightly out of distance order, so
+            # a few candidates are re-sorted exactly and the nearest kept: the same nearest
+            # the threshold experiment takes. `+ 0` stops Postgres 17 from trusting the
+            # index's order (pgvector README, "Iterative Index Scans").
             cur = await conn.execute(
-                f"SELECT prompt, 1 - (embedding <=> %(v)s::vector), {_ENTRY_COLUMNS}"
+                "WITH candidates AS MATERIALIZED ("
+                f" SELECT prompt, embedding <=> %(v)s::vector AS distance, {_ENTRY_COLUMNS}"
                 " FROM semantic_cache"
                 " WHERE key_id = %(key)s AND context_hash = %(ctx)s AND expires_at > %(now)s"
-                " ORDER BY embedding <=> %(v)s::vector LIMIT 1",
-                {"v": vector, "key": key_id, "ctx": context, "now": now},
+                " ORDER BY distance LIMIT %(k)s"
+                f") SELECT prompt, 1 - distance, {_ENTRY_COLUMNS} FROM candidates"
+                " ORDER BY distance + 0 LIMIT 1",
+                {"v": vector, "key": key_id, "ctx": context, "now": now, "k": _CANDIDATES},
             )
             row = await cur.fetchone()
         if row is None:

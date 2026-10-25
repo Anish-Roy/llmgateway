@@ -876,3 +876,20 @@ One entry per phase: what was chosen, and why.
 - **For Phase 11:** the replay should send `x-gateway-cache: semantic` in its cache modes, or
   the semantic cache saves nothing. It should report semantic hits apart from exact ones,
   since only those can be wrong.
+- **Fixed after the done-when check: the HNSW path re-sorts its candidates exactly.**
+  pgvector's README says `relaxed_order` "allows results to be slightly out of order by
+  distance". With `LIMIT 1` straight off the index, the threshold and the numbers guard could
+  be handed a candidate that isn't the nearest, while the experiment always takes the
+  nearest. The store now takes 10 candidates in a materialized CTE and re-sorts them by
+  distance (`ORDER BY distance + 0`, as the pgvector README shows for Postgres 17). That
+  keeps relaxed order's better recall, and the final order is exact. `strict_order` was the
+  other choice; pgvector says it gives lower recall.
+  - **What this corrects:** the step 4 replay that matched the experiment's 27 hits ran on
+    378 rows in one key and context. There, the planner takes the `(key_id, context_hash)`
+    btree index and scans exactly, so that check proved the exact path, not HNSW.
+  - **The new test** drives `PostgresSemanticStore` itself through the HNSW index (sequential
+    and bitmap scans off on the pool's connections, btree indexes dropped). Bob's two entries
+    are farther than all 60 of Alice's, and the nearer of Bob's must come back. It fails with
+    iterative scan off.
+  - **Not tested:** a case where relaxed order actually comes back out of order. It can't be
+    set up on purpose. The re-sort makes the result exact whichever order the index returns.

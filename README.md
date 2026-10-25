@@ -108,10 +108,11 @@ request and the other way round. A hit on a stream is replayed as SSE chunks. On
 every API key, stored in Postgres (`response_cache`).
 
 Every reply says what happened in `x-gateway-cache`: `exact` (a hit, a few milliseconds, no
-provider call, `x-gateway-attempts: 0`), `miss`, or `bypass`. Requests without a temperature,
-above the limit, or with `n` > 1 are bypassed, and so is any request sent with
-`x-gateway-cache: off`. A hit still counts against the key's requests per minute but uses no
-tokens, and its request-log row has `cache_status = 'exact'` and $0. Only finished text answers
+provider call, `x-gateway-attempts: 0`), `semantic` (a hit on a similar question, for requests
+that opt in: see below), `miss`, or `bypass`. Requests without a temperature, above the
+limit, or with `n` > 1 are bypassed, and so is any request sent with `x-gateway-cache: off`.
+A hit still counts against the key's requests per minute but uses no tokens, and its
+request-log row has `cache_status = 'exact'` (or `'semantic'`) and $0. Only finished text answers
 are stored: not errors, cut streams, tool calls or empty replies (a reasoning model that spends
 all of `max_tokens` thinking returns no text, and isn't cached).
 

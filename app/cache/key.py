@@ -14,8 +14,9 @@ import json
 
 from app.api.schemas import ChatRequest, ChatResponse
 
-# A client sends `x-gateway-cache: off` to skip the cache, both reading and storing. The
-# gateway's reply carries the same header: `exact` (a hit), `miss`, or `bypass` (not cacheable,
+# A client sends `x-gateway-cache: off` to skip the caches, both reading and storing, or
+# `semantic` to use the semantic cache too (app/cache/semantic.py). The gateway's reply
+# carries the same header: `exact` or `semantic` (a hit), `miss`, or `bypass` (not cacheable,
 # or turned off).
 CACHE_HEADER = "x-gateway-cache"
 

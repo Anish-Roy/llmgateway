@@ -11,6 +11,7 @@ import numpy as np
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 import app.main
 from app.api.schemas import ChatRequest, ChatResponse
@@ -509,6 +510,48 @@ async def test_postgres_store_deletes_only_expired_entries(migrated):
         assert await store.delete_expired(NOW + timedelta(seconds=60)) == 1
         candidate = await store.nearest(ALICE, CONTEXT, np.asarray(first, np.float32), NOW)
     assert candidate.prompt == "later"
+
+
+async def test_postgres_store_finds_a_keys_nearest_entry_through_the_hnsw_index(migrated):
+    """The path a big table takes: the index finds candidates, the filter keeps Bob's, and of
+    his two entries the nearer comes back. Bob's are farther than all 60 of Alice's, so only
+    an iterative scan reaches them, and the re-sort makes sure the nearest of them wins."""
+    rng = np.random.default_rng(1)
+    query = rng.standard_normal(DIMENSIONS).astype(np.float32)
+    query /= np.linalg.norm(query)
+
+    def toward_query(weight: float) -> np.ndarray:
+        noise = rng.standard_normal(DIMENSIONS).astype(np.float32)
+        noise /= np.linalg.norm(noise)
+        v = weight * query + (1 - weight) * noise
+        return v / np.linalg.norm(v)
+
+    alice = [toward_query(w) for w in np.linspace(0.95, 0.6, 60)]
+    bob_near, bob_far = toward_query(0.5), toward_query(0.4)
+    assert float(bob_near @ query) > float(bob_far @ query)
+    with psycopg.connect(migrated) as conn:
+        conn.execute("DROP INDEX semantic_cache_key_context, semantic_cache_expires_at")
+    # Every connection of the store's pool has only the HNSW index to use.
+    params = conninfo_to_dict(migrated)
+    params["options"] += " -c enable_seqscan=off -c enable_bitmapscan=off"
+    forced = make_conninfo(**params)
+    async with open_pool(forced, max_size=1) as pool:
+        store = PostgresSemanticStore(pool)
+        for i, vector in enumerate(alice):
+            await store.put(_entry(f"alice {i}", vector))
+        await store.put(_entry("bob far", bob_far, key_id=BOB))
+        await store.put(_entry("bob near", bob_near, key_id=BOB))
+        candidate = await store.nearest(BOB, CONTEXT, query, NOW)
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "EXPLAIN SELECT prompt FROM semantic_cache WHERE key_id = %s"
+                " ORDER BY embedding <=> %s::vector LIMIT 1",
+                (BOB, "[" + ",".join(map(str, query.tolist())) + "]"),
+            )
+            plan = "\n".join(r[0] for r in await cur.fetchall())
+    assert "Index Scan using semantic_cache_embedding" in plan
+    assert candidate.prompt == "bob near"
+    assert candidate.similarity == pytest.approx(float(bob_near @ query), abs=1e-5)
 
 
 async def test_the_front_over_postgres_end_to_end(migrated):
