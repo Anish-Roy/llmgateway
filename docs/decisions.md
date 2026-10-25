@@ -357,3 +357,45 @@ One entry per phase: what was chosen, and why.
 - **Tests use the real authenticator over an in-memory store** (`tests/auth_helpers.authorize`),
   overriding `get_authenticator` the way `get_model_router` is overridden. One test runs the
   real startup against Postgres with keys made by the CLI's functions.
+- **Rate limits are two token buckets per key, in memory** (`app/auth/rate_limit.py`): one of
+  `rpm_limit` requests, one of `tpm_limit` tokens, each refilling to full over a minute,
+  continuously. A full bucket allows a whole minute's worth at once, which suits chat clients
+  that send a few requests together and then go quiet. A fixed window would allow twice the
+  limit across a window boundary. The buckets live in this process, so the gateway runs with one
+  worker, and a restart gives every key a full bucket. Sharing them between processes would
+  need Redis, which is out of scope here.
+- **A request's tokens are reserved before the call and settled after it.** The reply's length
+  isn't known up front, so admission reserves the prompt (estimated with tiktoken, plus 4 per
+  message) and the most the reply may use: `max_completion_tokens`, else `max_tokens`, else
+  1024, times `n`. When the request ends, `Reservation.settle(actual)` returns what wasn't used
+  or charges what was over. A request that failed before any provider answered settles at 0:
+  its tokens come back, but its request slot doesn't, so hammering a failing alias is still
+  limited.
+- **Settling only counts once.** A stream can end several ways (completed, cut, client gone,
+  failed before the first token), and step 5 may reach `settle` from more than one of them.
+  Making the second call a no-op is simpler than proving each path calls it exactly once.
+- **Admission is all or nothing.** Both buckets are checked before either is taken from, so a
+  rejected request costs nothing. Otherwise a client retrying on 429 would drain its own bucket
+  and never get back in. Nothing in `acquire` awaits, so on one event loop it can't interleave:
+  no lock.
+- **A reservation bigger than the whole TPM limit is cut to the limit.** Otherwise a request
+  with a large `max_tokens` on a small key could never be admitted, and every retry would get a
+  429. Cut down, it's admitted once the bucket is full, and settling charges the real usage.
+- **Token debt stops at minus one minute's worth.** Settling a reply longer than reserved can
+  take the bucket below zero. With no floor, one 2,000-token reply on a 500-TPM demo key would
+  lock that key out for 4 minutes. With the floor:
+  - no request ever waits more than 2 minutes;
+  - a key can never go more than 2x over its TPM in any window.
+  The floor at -1 minute also matches the openai SDK (checked in `_base_client.py`). It reads
+  `retry-after-ms`, then `retry-after`, waits that long before retrying, and doesn't retry at
+  all past 120 s. So a 429 from the gateway is always a delay the SDK will wait out.
+- **Waiting exactly the `Retry-After` always works.** The wait is `(needed - level) / rate`, and
+  the comparison has a 1e-9 slack, so floating-point rounding can't turn an exact wait into a
+  second 429. A test advances the fake clock by 99% of the wait (still limited) and then the
+  rest (admitted).
+- **A changed limit applies at the key's next request** (once the auth cache has the new
+  value). The bucket refills at the old rate up to that moment, then switches. Lowering a limit
+  clamps the level to it. Raising one gives no free burst: the bucket refills at the new rate.
+- **`estimate_tokens` ignores a `max_completion_tokens` or `n` that isn't a positive integer.**
+  The gateway doesn't validate them; the provider does. Crashing on `"n": "two"` would turn the
+  provider's honest 400 into a 500. `True` isn't 1 here, even though `bool` is an `int` in Python.
