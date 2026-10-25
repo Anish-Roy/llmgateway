@@ -7,8 +7,10 @@ import httpx2
 import openai
 import pytest
 
+from app.api.auth import get_authenticator
 from app.api.rate_limit_headers import duration
 from app.api.routes import get_model_router
+from app.auth.keys import ApiKey
 from app.auth.rate_limit import RateLimiter
 from app.main import create_app
 from app.providers.mock import MockProvider
@@ -51,6 +53,12 @@ def sdk(app, max_retries: int = 0) -> openai.AsyncOpenAI:
         http_client=httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app)),
         max_retries=max_retries,
     )
+
+
+def stored_key(app) -> ApiKey:
+    """The ApiKey behind `app.state.test_key`, for using the limiter directly."""
+    store = app.dependency_overrides[get_authenticator]().store
+    return next(iter(store._keys.values()))
 
 
 def token_level(app) -> float:
@@ -131,7 +139,7 @@ async def test_too_many_tokens_is_a_rate_limit_error():
     app = make_app(rpm=100, tpm=600, clock=FrozenClock())
     # Another request still running holds 500 tokens (finished ones give back what they
     # didn't use, so a second request after one would fit).
-    app.state.rate_limiter.acquire(_key(app), 500)
+    app.state.rate_limiter.acquire(stored_key(app), 500)
 
     with pytest.raises(openai.RateLimitError) as exc_info:
         await sdk(app).chat.completions.create(model="mock", messages=MESSAGES, max_tokens=500)
@@ -153,23 +161,16 @@ async def test_a_provider_429_is_told_apart_from_the_gateways():
 async def test_the_sdk_waits_out_retry_after_and_gets_in():
     # 600 rpm refills one request per 0.1 s, a real wait the SDK sleeps through.
     app = make_app(rpm=600, tpm=1_000_000)
-    app.state.rate_limiter._requests.clear()
     client = sdk(app, max_retries=2)
+    key = stored_key(app)
     for _ in range(600):
-        app.state.rate_limiter.acquire(_key(app), 0)
+        app.state.rate_limiter.acquire(key, 0)
 
     started = time.monotonic()
     resp = await client.chat.completions.create(model="mock", messages=MESSAGES)
 
     assert resp.choices[0].message.content == "Echo: hello there"
     assert 0.05 < time.monotonic() - started < 2
-
-
-def _key(app):
-    from app.api.auth import get_authenticator
-
-    store = app.dependency_overrides[get_authenticator]().store
-    return next(iter(store._keys.values()))
 
 
 # Settling: the reservation is swapped for real usage, however the request ends.

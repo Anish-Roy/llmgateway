@@ -430,3 +430,15 @@ One entry per phase: what was chosen, and why.
 - **The default reservation for a request without `max_tokens` is configurable**
   (`RATE_LIMIT_DEFAULT_COMPLETION_TOKENS`, 1024). Checked live: a stream with no `max_tokens`
   held about 1,030 tokens while it ran, and the next reply showed them back once it was settled.
+- **Phase 4 "done when", checked live (2026-10-25)** on a real server and Postgres, with a key
+  made by the CLI (3 RPM, 20,000 TPM) and real Groq replies:
+  - The smoke script and an SDK stream with `include_usage` both worked on `fast`.
+  - No key and a wrong key got a 401 (`invalid_api_key`), which the SDK raises as
+    `AuthenticationError`.
+  - The fourth request in the minute got a 429 (`type: requests`) with `retry-after: 18`.
+  - The server log had no warnings.
+  - The live run doesn't show settling: at 20,000 TPM the bucket refills (333 tokens a second)
+    between requests. The tests check settling exactly, with a frozen clock. The step 5 live
+    check showed it with a smaller key.
+  - Offline, `tests/test_auth.py` and `tests/test_rate_limit_http.py` cover the 401s and 429s
+    through the openai SDK.

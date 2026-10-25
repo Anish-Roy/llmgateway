@@ -3,7 +3,8 @@
 An OpenAI-compatible proxy in front of multiple LLM providers, with fallback, per-key rate
 limits, exact and semantic caching, PII masking and a cost dashboard.
 
-Status: Phase 2 done (Groq + Gemini behind model aliases, with retry and fallback). See
+Status: Phase 4 done (Groq + Gemini behind model aliases with retry and fallback, streaming,
+API keys and per-key rate limits). See
 [plan.md](plan.md) for the roadmap.
 
 ## Quick start
