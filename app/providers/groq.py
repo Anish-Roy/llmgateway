@@ -42,7 +42,15 @@ class GroqProvider:
 
         if resp.status_code >= 400:
             raise _error_from_response(resp)
-        return ChatResponse.model_validate(resp.json())
+        try:
+            return ChatResponse.model_validate(resp.json())
+        except ValueError as e:
+            # A 200 that isn't a chat completion (a proxy's HTML page, a changed schema).
+            # ValidationError is a ValueError too. As a ProviderError it can fall back;
+            # otherwise it would be an unhandled 500.
+            raise ProviderError(
+                502, "Groq returned an unreadable response", provider=self.name
+            ) from e
 
 
 def _error_from_response(resp: httpx.Response) -> ProviderError:

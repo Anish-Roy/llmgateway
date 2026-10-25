@@ -138,3 +138,18 @@ async def test_missing_api_key():
         await provider.chat(REQUEST)
 
     assert exc_info.value.status == 500
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, text="<html>Bad gateway</html>"),
+        httpx.Response(200, json={"unexpected": "shape"}),
+    ],
+)
+async def test_unreadable_success_body_becomes_retryable_502(response):
+    with pytest.raises(ProviderError) as exc_info:
+        await provider_with(lambda r: response).chat(REQUEST)
+
+    assert exc_info.value.status == 502
+    assert exc_info.value.retryable
