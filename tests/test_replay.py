@@ -28,6 +28,7 @@ from scripts.replay import (
     percentile,
     saved_share,
     summarize,
+    system_prompt,
 )
 
 CACHE_ROUTER = MODES[2]
@@ -192,9 +193,9 @@ def _replayer(gateway: FakeGateway, pauses: list[float]) -> Replayer:
     return Replayer(http, max_tokens=64, pause=2.0, sleep=pauses.append)
 
 
-def test_a_request_carries_the_mode_and_a_system_prompt_naming_the_run():
+def test_a_request_carries_the_mode_and_its_system_prompt():
     gateway = FakeGateway()
-    _replayer(gateway, []).send("r1", CACHE_ROUTER, "gw-k", _q("a"))
+    _replayer(gateway, []).send("Benchmark.", CACHE_ROUTER, "gw-k", _q("a"))
 
     request = gateway.requests[0]
     body = json.loads(request.content)
@@ -204,25 +205,27 @@ def test_a_request_carries_the_mode_and_a_system_prompt_naming_the_run():
     assert body["model"] == "auto"
     assert body["temperature"] == 0 and body["max_tokens"] == 64
     assert body["messages"] == [
-        {"role": "system", "content": "Benchmark run r1, mode cache+router."},
+        {"role": "system", "content": "Benchmark."},
         {"role": "user", "content": "prompt a"},
     ]
 
 
-def test_the_system_prompt_differs_by_mode_so_the_exact_cache_does_too():
-    gateway = FakeGateway()
-    replayer = _replayer(gateway, [])
-    for mode in MODES:
-        replayer.send("r1", mode, "gw-k", _q("a"))
-    systems = {json.loads(r.content)["messages"][0]["content"] for r in gateway.requests}
-    assert len(systems) == 3
+def test_the_system_prompt_names_the_run_the_mode_and_the_key():
+    assert system_prompt("r1", CACHE_ROUTER, 7) == "Benchmark run r1, mode cache+router, key 7."
+
+
+def test_the_system_prompt_differs_by_mode_and_key_so_the_exact_cache_does_too():
+    prompts = {system_prompt("r1", mode, 7) for mode in MODES}
+    # A mode started over gets a new key.
+    prompts.add(system_prompt("r1", MODES[1], 8))
+    assert len(prompts) == 4
 
 
 def test_the_overhead_modes_send_the_mock_alias_with_each_cache_setting():
     gateway = FakeGateway()
     replayer = _replayer(gateway, [])
     for mode in OVERHEAD_MODES:
-        replayer.send("r1", mode, "gw-k", _q("a"))
+        replayer.send("S.", mode, "gw-k", _q("a"))
     assert {json.loads(r.content)["model"] for r in gateway.requests} == {"mock"}
     # No header at all is the default: the exact cache only.
     assert [r.headers.get("x-gateway-cache") for r in gateway.requests] == [
@@ -235,7 +238,7 @@ def test_the_overhead_modes_send_the_mock_alias_with_each_cache_setting():
 def test_the_reply_headers_become_the_result():
     headers = {"x-gateway-cache": "exact", "x-gateway-route": "fast", "x-gateway-fallback": "true"}
     gateway = FakeGateway({"prompt a": headers})
-    result = _replayer(gateway, []).send("r1", CACHE_ROUTER, "gw-k", _q("a"))
+    result = _replayer(gateway, []).send("S.", CACHE_ROUTER, "gw-k", _q("a"))
     assert (result.id, result.status, result.cache) == ("a", 200, "exact")
     assert result.route == "fast" and result.fallback
 
@@ -244,8 +247,8 @@ def test_it_pauses_only_after_a_provider_call():
     gateway = FakeGateway({"prompt b": {"x-gateway-cache": "exact", "x-gateway-attempts": "0"}})
     pauses: list[float] = []
     replayer = _replayer(gateway, pauses)
-    replayer.send("r1", BASELINE, "gw-k", _q("a"))
-    replayer.send("r1", BASELINE, "gw-k", _q("b"))
+    replayer.send("S.", BASELINE, "gw-k", _q("a"))
+    replayer.send("S.", BASELINE, "gw-k", _q("b"))
     assert pauses == [2.0]
 
 
@@ -254,8 +257,8 @@ def test_a_rerun_sends_only_the_prompts_not_yet_saved(tmp_path):
     queries = [_q("a"), _q("b"), _q("c")]
     gateway = FakeGateway()
     replayer = _replayer(gateway, [])
-    assert replayer.replay("r1", BASELINE, "gw-k", queries[:2], path) == 2
-    assert replayer.replay("r1", BASELINE, "gw-k", queries, path) == 1
+    assert replayer.replay("S.", BASELINE, "gw-k", queries[:2], path) == 2
+    assert replayer.replay("S.", BASELINE, "gw-k", queries, path) == 1
     assert [r.id for r in load_results(path)] == ["a", "b", "c"]
 
 
@@ -263,7 +266,7 @@ def test_a_failed_request_stops_the_run_unsaved(tmp_path):
     path = tmp_path / "baseline.jsonl"
     gateway = FakeGateway({"prompt b": {"status": "503"}})
     with pytest.raises(Stopped, match="b: HTTP 503"):
-        _replayer(gateway, []).replay("r1", BASELINE, "gw-k", [_q("a"), _q("b"), _q("c")], path)
+        _replayer(gateway, []).replay("S.", BASELINE, "gw-k", [_q("a"), _q("b"), _q("c")], path)
     assert [r.id for r in load_results(path)] == ["a"]
 
 
@@ -273,14 +276,14 @@ def test_a_gateway_that_cant_be_reached_stops_the_run(tmp_path):
 
     http = httpx.Client(base_url="http://gw/v1", transport=httpx.MockTransport(refuse))
     with pytest.raises(Stopped, match="ConnectError"):
-        Replayer(http, 64, 0).replay("r1", BASELINE, "gw-k", [_q("a")], tmp_path / "b.jsonl")
+        Replayer(http, 64, 0).replay("S.", BASELINE, "gw-k", [_q("a")], tmp_path / "b.jsonl")
 
 
 def test_a_fallback_answer_is_saved_then_stops_the_run(tmp_path):
     path = tmp_path / "baseline.jsonl"
     gateway = FakeGateway({"prompt a": {"x-gateway-fallback": "true"}})
     with pytest.raises(Stopped, match="fallback"):
-        _replayer(gateway, []).replay("r1", BASELINE, "gw-k", [_q("a"), _q("b")], path)
+        _replayer(gateway, []).replay("S.", BASELINE, "gw-k", [_q("a"), _q("b")], path)
     assert [(r.id, r.fallback) for r in load_results(path)] == [("a", True)]
 
 

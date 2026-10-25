@@ -49,8 +49,14 @@ The run's state is data/replay/state.json, kept out of git: the run id and, per 
 created for it (high limits, so the gateway's own rate limit never shows). `run --new` starts
 another run, with new keys. Keys give each mode its own spend in request_logs and its own
 semantic cache. The exact cache is shared by all keys, so every request carries a system
-prompt naming the run and the mode: an answer stored in one mode or run is never an exact hit
-in another. The router reads only user messages, so the system prompt doesn't change routing.
+prompt naming the run, the mode and its key: an answer stored in one mode, run or key is never
+an exact hit in another. The router reads only user messages, so the system prompt doesn't
+change routing.
+
+To start one mode over (say it was stopped by a daily limit for longer than CACHE_TTL_S, and
+its first answers would expire before their rephrasings come), revoke its key, delete it from
+state.json and move its results file aside. The next `run` gives it a new key, so a new system
+prompt: nothing it stored before can be a hit.
 """
 
 import argparse
@@ -242,8 +248,8 @@ def markdown_table(summaries: list[Summary]) -> str:
     return "\n".join(lines)
 
 
-def system_prompt(run_id: str, mode: Mode) -> str:
-    return f"Benchmark run {run_id}, mode {mode.name}."
+def system_prompt(run_id: str, mode: Mode, key_id: int) -> str:
+    return f"Benchmark run {run_id}, mode {mode.name}, key {key_id}."
 
 
 @dataclass(frozen=True)
@@ -309,11 +315,11 @@ class Replayer:
         self.pause = pause
         self.sleep = sleep
 
-    def send(self, run_id: str, mode: Mode, key: str, query: Query) -> Result:
+    def send(self, system: str, mode: Mode, key: str, query: Query) -> Result:
         body = {
             "model": mode.model,
             "messages": [
-                {"role": "system", "content": system_prompt(run_id, mode)},
+                {"role": "system", "content": system},
                 {"role": "user", "content": query.prompt},
             ],
             "temperature": 0,
@@ -338,7 +344,7 @@ class Replayer:
             fallback=r.headers.get("x-gateway-fallback") == "true",
         )
 
-    def replay(self, run_id: str, mode: Mode, key: str, queries: list[Query], path: Path) -> int:
+    def replay(self, system: str, mode: Mode, key: str, queries: list[Query], path: Path) -> int:
         """Sends the prompts not yet in `path`, saving each answer. Returns how many it sent;
         raises Stopped at a failure or a fallback."""
         done = {r.id for r in load_results(path)}
@@ -347,7 +353,7 @@ class Replayer:
             if q.id in done:
                 continue
             try:
-                result = self.send(run_id, mode, key, q)
+                result = self.send(system, mode, key, q)
             except httpx.HTTPError as e:
                 raise Stopped(f"{mode.name} {q.id}: {e!r}") from e
             sent += 1
@@ -394,7 +400,9 @@ def run(args: argparse.Namespace, queries: list[Query], modes: list[Mode], pause
                 current.save(state)
             path = results_path(args.dir, current, mode)
             try:
-                replayer.replay(current.id, mode, current.keys[mode.name].key, queries, path)
+                key = current.keys[mode.name]
+                system = system_prompt(current.id, mode, key.id)
+                replayer.replay(system, mode, key.key, queries, path)
             except Stopped as e:
                 print(f"\nStopped: {e}. Rerun to resume.", file=sys.stderr)
                 return 1
