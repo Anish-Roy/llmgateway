@@ -16,6 +16,7 @@ from app.api.schemas import ChatRequest, Usage
 from app.auth.keys import ApiKey
 from app.auth.rate_limit import RateLimitExceeded
 from app.cache.store import CacheEntry
+from app.guardrails.pii import PiiType
 from app.providers.base import ProviderError
 from app.routing.registry import Price, Target
 from app.routing.router import ModelNotFoundError, Routed, RoutedStream
@@ -53,6 +54,12 @@ class Recording:
         self._created_at = datetime.now(UTC)
         self._started = time.monotonic()
         self._done = False
+        self._pii_types: list[PiiType] = []
+
+    def masked(self, types: tuple[PiiType, ...]) -> None:
+        """The kinds of PII masked in the request. Called as soon as it's masked, so a request
+        that then fails still says what it held."""
+        self._pii_types = list(types)
 
     def replied(self, routed: Routed, usage: Usage, usage_estimated: bool) -> None:
         """A non-streamed reply. `usage` is the provider's, or an estimate if it sent none."""
@@ -160,6 +167,7 @@ class Recording:
             attempts=attempts,
             fallback=fallback,
             cache_status=cache_status,
+            pii_types=self._pii_types,
         )
 
     def _submit(self, build: Callable[[], RequestLog]) -> None:

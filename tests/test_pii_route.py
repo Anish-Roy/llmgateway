@@ -304,3 +304,46 @@ async def test_a_held_tail_is_sent_before_a_mid_stream_error():
     text = "".join(c["choices"][0]["delta"].get("content") or "" for c in chunks)
     assert text == f"Sent to {EMAIL} and [PHO"
     assert error["error"]["message"] == "gone"
+
+
+# The request log: which kinds were masked, never the values.
+
+
+async def test_the_log_says_which_kinds_were_masked():
+    gw = Gateway()
+
+    await gw.post(ask(f"Mail {EMAIL}, card {CARD}, call {PHONE}, again {EMAIL}"))
+    await gw.post(ask("What is HTTP?"))
+
+    masked, plain = await gw.rows()
+    assert masked.pii_types == ["card", "email", "phone"]
+    assert plain.pii_types == []
+    assert_no_raw_values(masked)
+
+
+async def test_every_ending_logs_the_kinds_masked():
+    # A stream, a cache hit and an alias that doesn't exist...
+    gw = Gateway()
+    await gw.post(ask(f"Mail {EMAIL}", stream=True))
+    await gw.post(ask(f"Mail {EMAIL}"))
+    await gw.post({**ask(f"Mail {EMAIL}"), "model": "nope"})
+    # ...and every provider down.
+    down = Gateway(("flaky", MockProvider(failure_rate=1.0)))
+    await down.post(ask(f"Mail {EMAIL}"))
+
+    streamed, hit, not_found = await gw.rows()
+    (failed,) = await down.rows()
+    assert (streamed.stream, hit.cache_status, not_found.status_code) == (True, "exact", 404)
+    assert failed.outcome == "provider_error"
+    assert [r.pii_types for r in (streamed, hit, not_found, failed)] == [["email"]] * 4
+
+
+async def test_a_rate_limited_request_is_logged_before_masking():
+    gw = Gateway(rpm=1)
+
+    await gw.post(ask("What is HTTP?"))
+    limited = await gw.post(ask(f"Mail {EMAIL}"))
+
+    assert limited.status_code == 429
+    # Refused before masking: no PII was looked for, and none reached anything.
+    assert (await gw.rows())[1].pii_types == []

@@ -85,6 +85,7 @@ async def chat_completions(
     # caches store keep the placeholders.
     masked = mask_request(body)
     body, values = masked.request, masked.values
+    recording.masked(masked.types)
 
     # Both kinds of request share entries: the key leaves `stream` out. None when the request
     # isn't cacheable or the client turned the cache off.

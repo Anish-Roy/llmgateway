@@ -150,6 +150,7 @@ async def test_postgres_log_writes_every_column(pg_conninfo, key_id):
         outcome="client_disconnect",
         attempts=3,
         fallback=True,
+        pii_types=["email", "phone"],
     )
 
     row = await _write_and_read_back(pg_conninfo, entry)
@@ -173,3 +174,9 @@ async def test_postgres_log_writes_a_request_no_provider_answered(pg_conninfo, k
     row = await _write_and_read_back(pg_conninfo, entry)
 
     assert row == dataclasses.astuple(entry)
+
+
+async def test_postgres_log_refuses_an_unknown_pii_type(pg_conninfo, key_id):
+    # The column holds kinds, never values: anything else is a bug, and the row is refused.
+    with pytest.raises(psycopg.errors.CheckViolation):
+        await _write_and_read_back(pg_conninfo, _entry(key_id=key_id, pii_types=["a@b.com"]))

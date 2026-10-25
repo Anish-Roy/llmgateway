@@ -411,6 +411,8 @@ def test_rows_reach_postgres_on_the_real_startup(pg_conninfo, monkeypatch):
 
     with TestClient(create_app()) as client:
         assert client.post("/v1/chat/completions", json=chat("mock"), headers=headers).is_success
+        pii = {"model": "mock", "messages": [{"role": "user", "content": "a@b.com, 9876543210"}]}
+        assert client.post("/v1/chat/completions", json=pii, headers=headers).is_success
         assert (
             client.post("/v1/chat/completions", json=chat("nope"), headers=headers).status_code
             == 404
@@ -419,11 +421,12 @@ def test_rows_reach_postgres_on_the_real_startup(pg_conninfo, monkeypatch):
 
     with psycopg.connect(pg_conninfo) as conn:
         rows = conn.execute(
-            "SELECT key_id, requested_model, provider, status_code, outcome, cost_usd"
+            "SELECT key_id, requested_model, provider, status_code, outcome, cost_usd, pii_types"
             " FROM request_logs ORDER BY id"
         ).fetchall()
 
     assert rows == [
-        (record.id, "mock", "mock", 200, "completed", Decimal(0)),
-        (record.id, "nope", None, 404, "rejected", Decimal(0)),
+        (record.id, "mock", "mock", 200, "completed", Decimal(0), []),
+        (record.id, "mock", "mock", 200, "completed", Decimal(0), ["email", "phone"]),
+        (record.id, "nope", None, 404, "rejected", Decimal(0), []),
     ]

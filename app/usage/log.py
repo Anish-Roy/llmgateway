@@ -9,12 +9,14 @@ builds the response, and on a stream it runs before the stream's record is compl
 import asyncio
 import dataclasses
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal, Protocol
 
 from psycopg_pool import AsyncConnectionPool
+
+from app.guardrails.pii import PiiType
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,9 @@ class RequestLog:
     attempts: int
     fallback: bool
     cache_status: CacheStatus = "miss"
+    # The kinds of PII masked in the request, sorted; never the values. A list, which psycopg
+    # sends as a Postgres array.
+    pii_types: list[PiiType] = field(default_factory=list)
 
 
 _COLUMNS = [f.name for f in dataclasses.fields(RequestLog)]
