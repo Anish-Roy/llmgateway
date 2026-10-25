@@ -1133,10 +1133,10 @@ One entry per phase: what was chosen, and why.
     - **The one slip:** in the pandas-merge answer, a side remark that NaN keys are
       "considered distinct" is wrong (pandas matches NaN keys to each other). Its main
       diagnosis, many-to-many keys, is right, and `strong` was vague on the same point.
-  - **First-pass verdict, pending the user's own read of `docs/router_spotcheck.md`:** on
-    this sample, sending these prompts to `fast` loses no quality that matters. "Hard" in
-    this dataset mostly means "longer answer", which gpt-oss-20b handles. It's 26 prompts
-    judged by one reader, not a benchmark.
+  - **Verdict, confirmed by the user after reading `docs/router_spotcheck.md`
+    (2026-10-25):** on this sample, sending these prompts to `fast` loses no quality that
+    matters. "Hard" in this dataset mostly means "longer answer", which gpt-oss-20b handles.
+    It's 26 prompts read by two people, not a benchmark.
 - **The numbers are optimistic, and the README says so.**
   - **The keywords weren't written blind:** the list was written after reading the dataset.
     The split only keeps the length threshold honest.
