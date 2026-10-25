@@ -65,7 +65,10 @@ async def _events(stream: RoutedStream, include_usage: bool) -> AsyncIterator[st
                 # (stream_options.include_usage), as OpenAI does. Clients that read
                 # chunk.choices[0] would crash on it otherwise.
                 continue
-            yield _event(chunk.model_dump_json(exclude_none=True))
+            # Usage on a chunk with choices is a provider's running total, kept for the
+            # gateway's own records. OpenAI sends usage only on the final chunk.
+            exclude = {"usage"} if chunk.choices else None
+            yield _event(chunk.model_dump_json(exclude_none=True, exclude=exclude))
     except ProviderError as e:
         logger.warning("%s failed mid-stream: %s %s", stream.target.provider, e.status, e.message)
         yield _event(error_body(e.status, e.message, e.type, e.param, e.code).model_dump_json())

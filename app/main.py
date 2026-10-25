@@ -15,6 +15,7 @@ from app.providers.groq import GroqProvider
 from app.providers.mock import MockProvider
 from app.routing.registry import GeminiSpec, GroqSpec, MockSpec, RegistryConfig, load_registry
 from app.routing.router import ModelRouter
+from app.usage.tokens import load_encoding_in_background
 
 logger = logging.getLogger(__name__)
 
@@ -57,11 +58,18 @@ def build_providers(
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    # The app's own loggers (uvicorn configures only its own). Without a handler, Python shows
+    # warnings only, so the per-stream summary lines would never appear. JSON logs: Phase 12.
+    logging.basicConfig(level=settings.log_level, format="%(levelname)s:  %(name)s: %(message)s")
+    # httpx logs every upstream request at INFO; the gateway's own lines say what matters.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Read and validate the registry at startup, so a bad file stops the app right away.
         config = load_registry(settings.models_file)
+        # For estimating usage when a stream ends early. Never blocks startup.
+        load_encoding_in_background()
         # One pooled HTTP client for all provider calls, closed on shutdown.
         async with httpx.AsyncClient(timeout=settings.request_timeout_s) as client:
             providers = build_providers(config, settings, client)

@@ -203,6 +203,9 @@ class _StreamTranslator:
             created=self._created,
             model=self._model,
             choices=[ChunkChoice(delta=delta, finish_reason=finish_reason)],
+            # The running total so far, for the gateway: if the stream is cut, usage is still
+            # known. The SSE layer doesn't send usage on chunks with choices.
+            usage=self.usage,
         )
 
 

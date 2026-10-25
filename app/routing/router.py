@@ -4,10 +4,12 @@ import random
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
+from typing import Literal
 
-from app.api.schemas import ChatChunk, ChatRequest, ChatResponse
+from app.api.schemas import ChatChunk, ChatRequest, ChatResponse, Usage
 from app.providers.base import Provider, ProviderError
 from app.routing.registry import Target
+from app.usage.tokens import estimate_usage
 
 logger = logging.getLogger(__name__)
 
@@ -97,8 +99,9 @@ class ModelRouter:
         the first token is out, a failure can only end the stream: the client already has part
         of an answer. The deadline covers the wait for the first token, not the whole answer.
         """
+        started = time.monotonic()
         (held, rest), target, attempts, fallback = await self._route(request, _open_stream)
-        return RoutedStream(held, rest, target, attempts, fallback)
+        return RoutedStream(held, rest, target, attempts, fallback, request, started)
 
     async def _route[T](
         self, request: ChatRequest, call: Callable[[Provider, ChatRequest], Awaitable[T]]
@@ -170,11 +173,36 @@ def _final_error(errors: list[ProviderError], default: ProviderError | None = No
     return default or _deadline_error()
 
 
+Outcome = Literal["completed", "provider_error", "gateway_error", "client_disconnect"]
+
+
+@dataclass
+class StreamRecord:
+    """What happened on one stream, for request logs (Phase 5) and caching (Phase 6)."""
+
+    # None while the stream is still running.
+    outcome: Outcome | None = None
+    # From the router getting the request to the first chunk with output going to the client:
+    # what the client waits for, including retries, fallback and the read-ahead.
+    ttft_s: float | None = None
+    duration_s: float | None = None
+    # The answer as streamed (what the client got, even if the stream was cut).
+    text: str = ""
+    finish_reason: str | None = None
+    # The provider's count when it sent one (Gemini sends running totals, so even a cut
+    # stream has one). Otherwise an estimate from the text, marked as such: a lower bound,
+    # because hidden reasoning is billed but never streamed.
+    usage: Usage | None = None
+    usage_estimated: bool = False
+    error_status: int | None = None
+
+
 class RoutedStream:
     """A provider's stream after the router committed to it: iterate it for the chunks.
 
     Call `aclose` when done, finished or not, so the upstream connection is freed even if the
-    stream was never iterated (say, the client left before the response started).
+    stream was never iterated (say, the client left before the response started). `record`
+    is complete once the stream ends or is closed.
     """
 
     def __init__(
@@ -184,21 +212,70 @@ class RoutedStream:
         target: Target,
         attempts: int,
         fallback: bool,
+        request: ChatRequest,
+        started: float,
     ) -> None:
         self._held = held
         self._rest = rest
         self.target = target
         self.attempts = attempts
         self.fallback = fallback
+        self._messages = request.messages
+        self._started = started
+        self.record = StreamRecord()
 
     async def __aiter__(self) -> AsyncIterator[ChatChunk]:
-        for chunk in self._held:
-            yield chunk
-        async for chunk in self._rest:
-            yield chunk
+        try:
+            for chunk in self._held:
+                self._observe(chunk)
+                yield chunk
+            async for chunk in self._rest:
+                self._observe(chunk)
+                yield chunk
+        except ProviderError as e:
+            self._finish("provider_error", e.status)
+            raise
+        except Exception:
+            self._finish("gateway_error", 500)
+            raise
+        self._finish("completed")
 
     async def aclose(self) -> None:
         await _aclose(self._rest)
+        # Closed before the end: the client went away (or never started reading).
+        self._finish("client_disconnect")
+
+    def _observe(self, chunk: ChatChunk) -> None:
+        record = self.record
+        if record.ttft_s is None and chunk.has_output():
+            record.ttft_s = time.monotonic() - self._started
+        if chunk.usage is not None:
+            record.usage = chunk.usage
+        for choice in chunk.choices:
+            record.text += choice.delta.content or ""
+            record.finish_reason = choice.finish_reason or record.finish_reason
+
+    def _finish(self, outcome: Outcome, error_status: int | None = None) -> None:
+        record = self.record
+        if record.outcome is not None:
+            return
+        record.outcome = outcome
+        record.error_status = error_status
+        record.duration_s = time.monotonic() - self._started
+        if record.usage is None:
+            record.usage = estimate_usage(self._messages, record.text)
+            record.usage_estimated = True
+        logger.info(
+            "stream %s/%s %s: ttft %s, %.2fs, %d+%d tokens%s",
+            self.target.provider,
+            self.target.model,
+            outcome if error_status is None else f"{outcome} ({error_status})",
+            "-" if record.ttft_s is None else f"{record.ttft_s:.2f}s",
+            record.duration_s,
+            record.usage.prompt_tokens,
+            record.usage.completion_tokens,
+            " (estimated)" if record.usage_estimated else "",
+        )
 
 
 async def _open_stream(

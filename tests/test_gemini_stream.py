@@ -241,6 +241,9 @@ async def test_groq_outage_before_the_first_token_streams_from_gemini():
 
     assert "".join(c.choices[0].delta.content or "" for c in chunks if c.choices) == "Amazon\nNile"
     assert chunks[-1].usage.completion_tokens == 36
+    # Gemini's running totals ride on every chunk inside the gateway, but only the final
+    # usage chunk carries usage to the client, as with OpenAI.
+    assert all(c.usage is None for c in chunks[:-1])
     assert raw.headers["x-gateway-provider"] == "gemini"
     assert raw.headers["x-gateway-fallback"] == "true"
     # Groq's 503 was retried once, then Gemini served it.

@@ -253,3 +253,39 @@ One entry per phase: what was chosen, and why.
     server log.
   - The same fallback is covered offline in `tests/test_gemini_stream.py`: Groq returns a 503
     before the first token, then Gemini streams through the real adapters and the SDK.
+- **Every stream gets a `StreamRecord`** (`RoutedStream.record`), complete once the stream
+  ends or is closed. Phase 5 logs it and Phase 6 can cache its text. It holds:
+  - the outcome: `completed`, `provider_error`, `gateway_error` or `client_disconnect`;
+  - the error status, the finish reason and the duration;
+  - the answer as streamed, even when the stream was cut;
+  - the usage, and whether it was estimated;
+  - the time to first token, measured from the router getting the request to the first chunk
+    with output going to the client. That's what the client waits for, so it includes retries,
+    fallback and the read-ahead, not just the provider's speed.
+  A one-line summary is logged at INFO when the stream closes.
+- **Provider usage always wins over an estimate.** Gemini's running totals ride along on every
+  chunk inside the gateway, so a Gemini stream cut halfway still has Gemini's own count. The SSE
+  layer strips `usage` from every chunk that has choices, so clients only see usage on the
+  final chunk, as with OpenAI. Groq and the mock report usage only at the end, so a cut Groq
+  stream falls back to an estimate.
+- **Estimates use tiktoken `o200k_base` and are flagged `usage_estimated`.** The encoding is
+  close for gpt-oss and only approximate for Gemini. It counts visible text only, so with
+  `include_reasoning: false` (or Gemini thinking) the billed reasoning tokens are missing.
+  Treat the estimate as a lower bound, not an exact cost.
+- **tiktoken loads in a background thread at startup, and counts are chars/4 until it's
+  ready.** The first `get_encoding` downloads the encoding file, which took 18.5 s on
+  2026-10-25. Doing that on the request path would block the event loop. The file is cached
+  in the temp directory, so a fresh container downloads it again; Phase 12's Dockerfile should
+  fetch it at build time. If the download fails, counts stay at chars/4. Tests never download
+  it.
+- **`LOG_LEVEL` is now applied** (`logging.basicConfig` in `create_app`). Before, nothing read
+  it, so the app's INFO lines never appeared and warnings only showed through Python's
+  last-resort handler. httpx's per-request INFO lines are turned down to WARNING. Structured
+  JSON logs are still Phase 12.
+- **Phase 3 "done when", checked live (2026-10-25):**
+  - The openai SDK with `stream=True` works against Groq (`fast`, `strong`) and Gemini.
+  - A mid-stream failure (`demo-midstream`) reaches the client as an `APIError` after the
+    partial text. It's logged as `provider_error (503)` with estimated usage.
+  - A client that disconnected 0.5 s into a long `strong` answer was logged as
+    `client_disconnect`, which shows the upstream close runs on a real server.
+
