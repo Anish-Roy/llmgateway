@@ -7,10 +7,12 @@ whole minute's worth at once.
 A request's tokens aren't known until it's done, so admission reserves an estimate (prompt plus
 the most it may generate) and `Reservation.settle` corrects it with the real usage afterwards:
 unused tokens go back, extra ones are charged. Extra charges can take the bucket below zero, so
-later requests wait. That debt is capped at one minute's worth (`-tpm_limit`), which bounds both
-sides: a key can never go more than 2x over its TPM in any window, and no key waits more than
-two minutes for a full reservation, which is also the longest `Retry-After` the openai SDK will
-wait for before retrying.
+later requests wait. That debt is capped at one minute's worth (`-tpm_limit`), so no key waits
+more than two minutes for a full reservation, which is also the longest `Retry-After` the
+openai SDK will wait for before retrying. The cap bounds the wait, not the overuse: debt past
+it is forgiven. A reply can only run past its reservation when the client sets no max_tokens
+(or the prompt estimate is low), so with max_tokens set the TPM limit holds; without it, a key
+can go over by however much its replies exceed the default reservation.
 
 Buckets live in this process only, so the gateway must run with one worker; a restart gives
 every key a full bucket. Nothing here awaits, so on the event loop each call runs whole: no lock.

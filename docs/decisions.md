@@ -383,12 +383,23 @@ One entry per phase: what was chosen, and why.
   429. Cut down, it's admitted once the bucket is full, and settling charges the real usage.
 - **Token debt stops at minus one minute's worth.** Settling a reply longer than reserved can
   take the bucket below zero. With no floor, one 2,000-token reply on a 500-TPM demo key would
-  lock that key out for 4 minutes. With the floor:
-  - no request ever waits more than 2 minutes;
-  - a key can never go more than 2x over its TPM in any window.
+  lock that key out for 4 minutes. With the floor, no request ever waits more than 2 minutes:
+  one minute to pay off the debt and one to refill a full reservation.
   The floor at -1 minute also matches the openai SDK (checked in `_base_client.py`). It reads
   `retry-after-ms`, then `retry-after`, waits that long before retrying, and doesn't retry at
   all past 120 s. So a 429 from the gateway is always a delay the SDK will wait out.
+- **The floor bounds the wait, not the overuse.** (Corrected: this entry first said a key could
+  never go more than 2x over its TPM, which is wrong.) Debt below one minute's worth is
+  forgiven, so a key whose replies keep running past their reservation can use more than its
+  TPM for as long as that goes on. For example, a 500-TPM key, no `max_tokens`, 8,000-token
+  replies: each request is admitted with 500 reserved, settles to the -500 floor, and waits
+  2 minutes. That's 8,000 tokens per 2 minutes, 8x the limit. A reply only runs past its
+  reservation when the client sets no `max_tokens` (the default reserves 1024) or the prompt
+  estimate is low, so with `max_tokens` set the limit holds, apart from estimation error.
+  Separately, any token bucket lets a key use up to 2x its limit in the first minute after a
+  quiet spell: the full bucket at once, then a minute's refill. If the overuse matters,
+  raising `RATE_LIMIT_DEFAULT_COMPLETION_TOKENS`, or carrying debt over instead of forgiving it,
+  would close it. Carrying debt over brings back the long lockouts.
 - **Waiting exactly the `Retry-After` always works.** The wait is `(needed - level) / rate`, and
   the comparison has a 1e-9 slack, so floating-point rounding can't turn an exact wait into a
   second 429. A test advances the fake clock by 99% of the wait (still limited) and then the
