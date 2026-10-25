@@ -115,10 +115,11 @@ One entry per phase: what was chosen, and why.
   so a small `max_tokens` on `strong` can run out before any answer: that comes back as an
   empty reply with `finish_reason: "length"`.
 - **The Gemini adapter maps fields explicitly and rejects the rest.** It maps `temperature`,
-  `max_tokens`/`max_completion_tokens`, `top_p`, `stop`, `seed`, the penalties and `n=1`.
-  Anything else (`tools`, `logprobs`, `n>1`, tool messages) gets a 400 naming the parameter.
-  `seed` and the penalties weren't on the reference pages read this time, so recheck them if
-  Gemini rejects them. System and developer messages, wherever they appear, are joined into
+  `max_tokens`/`max_completion_tokens`, `top_p`, `stop`, `seed` and `n=1`, all confirmed live
+  on 2026-10-25. Anything else gets a 400 naming the parameter: `tools`, `logprobs`, `n>1`,
+  tool messages, and the presence/frequency penalties, which Gemini 3.x rejects with "Penalty
+  is not enabled for this model". Rejecting them in the adapter matters: a raw upstream 400
+  would block fallback, while the adapter's own provider-specific 400 lets Groq take it. System and developer messages, wherever they appear, are joined into
   `systemInstruction`. `assistant` becomes `model`, and back-to-back turns with the same role
   are merged, because Gemini expects them to alternate.
 - **Upstream errors that mean *our* config is wrong become a 502, never a client 4xx.** A bad

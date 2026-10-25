@@ -14,13 +14,13 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 ThinkingLevel = Literal["minimal", "low", "medium", "high"]
 
-# OpenAI request fields with a Gemini equivalent. Anything else in the request's extras gets an
-# honest 400 instead of being silently dropped (same rule as Phase 1).
+# OpenAI request fields with a Gemini equivalent (checked live 2026-10-25). Anything else in
+# the request's extras gets an honest 400 instead of being silently dropped (same rule as
+# Phase 1). Not the penalties: Gemini 3.x answers "Penalty is not enabled for this model", and
+# a raw upstream 400 would block fallback where our own provider-specific 400 doesn't.
 _GENERATION_FIELDS = {
     "top_p": "topP",
     "seed": "seed",
-    "presence_penalty": "presencePenalty",
-    "frequency_penalty": "frequencyPenalty",
 }
 
 _FINISH_REASONS = {

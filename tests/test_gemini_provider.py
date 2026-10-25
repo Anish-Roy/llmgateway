@@ -125,6 +125,9 @@ def test_no_settings_means_no_generation_config():
     [
         ({"tools": [{"type": "function", "function": {"name": "f"}}]}, "tools"),
         ({"logprobs": True}, "logprobs"),
+        # Gemini 3.x rejects penalties ("Penalty is not enabled for this model").
+        ({"presence_penalty": 0.5}, "presence_penalty"),
+        ({"frequency_penalty": 0.5}, "frequency_penalty"),
         ({"n": 2}, "n"),
         ({"messages": [{"role": "tool", "content": "42", "tool_call_id": "x"}]}, "messages.0"),
         ({"messages": [{"role": "system", "content": "only a system prompt"}]}, "messages"),
