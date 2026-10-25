@@ -484,3 +484,22 @@ One entry per phase: what was chosen, and why.
   the price on that date is enough, and older rows keep what they cost.
 - **Prices are `Decimal`.** Pydantic turns the YAML float `0.075` into exactly `Decimal("0.075")`
   (it goes through the float's shortest string form), so the config stays plain numbers.
+- **Rows are written by a fire-and-forget task, not a FastAPI `BackgroundTask`** (the plan
+  said `BackgroundTask`). A background task is attached to the route's response, so it never
+  runs when an error handler builds the response instead (a provider failure, a 429, a 404).
+  On a stream, `StreamingResponse` runs it before our `on_close`, when the stream's record isn't
+  complete, and a client disconnect can skip it. So `LogWriter.submit` starts a task and
+  returns: the client never waits for the insert. Step 4 calls it from the route and from the
+  stream's `on_finish`.
+- **A failed insert only logs a warning.** By then the response is sent; losing one row is
+  better than an error nobody can act on. Nothing retries it.
+- **`LogWriter` keeps each task until it's done, and the lifespan drains them before the pool
+  closes.** asyncio holds only weak references to tasks, so an unreferenced write could be
+  garbage-collected mid-insert. Without the drain, the last requests before a shutdown would
+  lose their rows.
+- **`created_at` is when the request arrived, set by the gateway**, not the database's `now()`
+  at insert time, which for a long stream would be minutes later.
+- **Costs are rounded half up to 10 places in Python,** the column's scale, so a row reads back
+  exactly as written and in-memory tests see what Postgres would store.
+- **`UsageLog` is a Protocol with a Postgres and an in-memory store**, like `KeyStore`. It's
+  write-only: the Phase 10 dashboard will read the table itself.

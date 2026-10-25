@@ -19,6 +19,7 @@ from app.providers.groq import GroqProvider
 from app.providers.mock import MockProvider
 from app.routing.registry import GeminiSpec, GroqSpec, MockSpec, RegistryConfig, load_registry
 from app.routing.router import ModelRouter
+from app.usage.log import LogWriter, PostgresUsageLog
 from app.usage.tokens import load_encoding_in_background
 
 logger = logging.getLogger(__name__)
@@ -74,8 +75,8 @@ def create_app() -> FastAPI:
         config = load_registry(settings.models_file)
         # For estimating usage when a stream ends early. Never blocks startup.
         load_encoding_in_background()
-        # One pooled HTTP client for all provider calls, and one Postgres pool (API keys now,
-        # request logs and the caches later). Both closed on shutdown.
+        # One pooled HTTP client for all provider calls, and one Postgres pool (API keys,
+        # request logs, and the caches later). Both closed on shutdown.
         async with (
             httpx.AsyncClient(timeout=settings.request_timeout_s) as client,
             open_pool(settings.database_url) as db_pool,
@@ -88,7 +89,12 @@ def create_app() -> FastAPI:
             app.state.model_router = ModelRouter(
                 config.aliases, providers, deadline_s=settings.request_deadline_s
             )
-            yield
+            app.state.log_writer = LogWriter(PostgresUsageLog(db_pool))
+            try:
+                yield
+            finally:
+                # Rows for the last requests, written before the pool below closes.
+                await app.state.log_writer.drain()
 
     app = FastAPI(title="LLM Gateway", version=__version__, lifespan=lifespan)
     # In memory and nothing to open or close, so it's built here rather than in the lifespan.
