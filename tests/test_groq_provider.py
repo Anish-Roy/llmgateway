@@ -153,3 +153,20 @@ async def test_unreadable_success_body_becomes_retryable_502(response):
 
     assert exc_info.value.status == 502
     assert exc_info.value.retryable
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(404, json={"error": {"message": "nope", "code": "model_not_found"}}),
+        httpx.Response(400, json={"error": {"message": "gone", "code": "model_decommissioned"}}),
+    ],
+)
+async def test_missing_or_retired_model_becomes_a_502_that_falls_back(response):
+    with pytest.raises(ProviderError) as exc_info:
+        await provider_with(lambda r: response).chat(REQUEST)
+
+    err = exc_info.value
+    assert err.status == 502
+    assert err.retryable
+    assert not err.retry_same_provider

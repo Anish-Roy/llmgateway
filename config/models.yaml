@@ -7,9 +7,14 @@
 #            The text after the first "/" is the provider's own model name, so it may contain
 #            more slashes.
 
+# Model IDs checked on 2026-10-25 against console.groq.com/docs/models and
+# ai.google.dev/gemini-api/docs/models. Providers retire models often: recheck them.
+
 providers:
   groq:
     type: groq
+  gemini:
+    type: gemini
   mock:
     type: mock
   # Always fails with a 503: put it first in an alias to watch fallback happen.
@@ -18,8 +23,14 @@ providers:
     failure_rate: 1.0
 
 aliases:
+  # Cheap and quick. Flash-Lite thinks at "minimal" by default, so max_tokens stays for the answer.
   fast:
     - groq/llama-3.1-8b-instant
+    - gemini/gemini-3.5-flash-lite
+  # Better answers, slower and pricier. Gemini 3.8 Flash thinks at "medium" by default.
+  strong:
+    - gemini/gemini-3.8-flash
+    - groq/llama-3.3-70b-versatile
   mock:
     - mock/mock-model
   # Fallback demo with no keys: flaky fails (and is retried once), mock answers.

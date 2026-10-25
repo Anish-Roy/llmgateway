@@ -4,6 +4,8 @@ from app.api.schemas import ChatRequest, ChatResponse
 from app.providers.base import ProviderError
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+# OpenAI-style error codes for a model that doesn't exist or was retired.
+_MODEL_GONE_CODES = {"model_not_found", "model_decommissioned"}
 
 
 class GroqProvider:
@@ -66,6 +68,17 @@ def _error_from_response(resp: httpx.Response) -> ProviderError:
             502,
             "Upstream provider rejected the gateway's credentials",
             type="api_error",
+            provider="groq",
+            retry_same_provider=False,
+        )
+    if resp.status_code == 404 or err.get("code") in _MODEL_GONE_CODES:
+        # The registry names a model Groq doesn't serve (Groq retires models often). That's
+        # the gateway's config, not the client's request, so let the next provider try.
+        return ProviderError(
+            502,
+            "Upstream provider does not serve the configured model",
+            type="api_error",
+            code=err.get("code"),
             provider="groq",
             retry_same_provider=False,
         )

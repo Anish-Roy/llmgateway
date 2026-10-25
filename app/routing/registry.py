@@ -13,6 +13,15 @@ class GroqSpec(BaseModel):
     type: Literal["groq"]
 
 
+class GeminiSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["gemini"]
+    # Thinking is on by default for most Gemini models and counts against max_tokens.
+    # None keeps the model's default; levels vary by model.
+    thinking_level: Literal["minimal", "low", "medium", "high"] | None = None
+
+
 class MockSpec(BaseModel):
     # extra="forbid" everywhere in this file: a typo like `failure_rte` should fail at startup,
     # not be silently ignored.
@@ -25,7 +34,7 @@ class MockSpec(BaseModel):
     fail_status: int = 503
 
 
-ProviderSpec = Annotated[GroqSpec | MockSpec, Field(discriminator="type")]
+ProviderSpec = Annotated[GroqSpec | GeminiSpec | MockSpec, Field(discriminator="type")]
 
 
 class Target(BaseModel):

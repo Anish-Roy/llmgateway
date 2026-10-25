@@ -84,3 +84,34 @@ One entry per phase: what was chosen, and why.
   injected,** so tests check the retry policy without waiting.
 - **`x-gateway-attempts` and `x-gateway-fallback` headers** next to `x-gateway-provider`.
   They make the fallback demo visible from `curl -i`, and Phase 5 logs the same values.
+- **Gemini through its native `generateContent` REST API, on the shared httpx client.** No
+  Google SDK and no Gemini OpenAI-compatible endpoint: translating between the two formats is
+  what makes this a gateway. The docs now label `generateContent` "Legacy" next to the newer
+  Interactions API, but it still works and has no shutdown date (checked 2026-10-25). Moving
+  to the Interactions API would only change the adapter.
+- **Model IDs checked 2026-10-25.** The Gemini 2.5 models are limited to accounts that used
+  them before, so `fast` falls back to `gemini-3.5-flash-lite` and `strong` starts on
+  `gemini-3.8-flash`, with `llama-3.3-70b-versatile` on Groq as its fallback.
+- **Thinking tokens count as completion tokens.** Gemini bills `thoughtsTokenCount` as output,
+  and they count against `maxOutputTokens`. Leaving them out would make Phase 5 costs too low.
+  Thought parts (`thought: true`) are left out of the reply text. Each Gemini provider entry
+  can set `thinking_level`. By default Flash-Lite thinks at "minimal" and 3.8 Flash at "medium",
+  so a small `max_tokens` on `strong` can run out before any answer: that comes back as an
+  empty reply with `finish_reason: "length"`.
+- **The Gemini adapter maps fields explicitly and rejects the rest.** It maps `temperature`,
+  `max_tokens`/`max_completion_tokens`, `top_p`, `stop`, `seed`, the penalties and `n=1`.
+  Anything else (`tools`, `logprobs`, `n>1`, tool messages) gets a 400 naming the parameter.
+  `seed` and the penalties weren't on the reference pages read this time, so recheck them if
+  Gemini rejects them. System and developer messages, wherever they appear, are joined into
+  `systemInstruction`. `assistant` becomes `model`, and back-to-back turns with the same role
+  are merged, because Gemini expects them to alternate.
+- **Upstream errors that mean *our* config is wrong become a 502, never a client 4xx.** A bad
+  Gemini key comes back as a **400** `INVALID_ARGUMENT` with reason `API_KEY_INVALID`
+  (checked with a made-up key). Passed on as-is, the client would be told their request is
+  invalid and fallback would never run. A model the provider doesn't serve is the same kind of
+  error: Gemini's 404, and Groq's 404 / `model_not_found` / `model_decommissioned`. All of them
+  move to the next provider without retrying the same one.
+- **A blocked prompt (no `candidates`) is a 200 with `finish_reason: "content_filter"`,** not a
+  crash and not a fallback. Any 200 the adapter can't read becomes a retryable 502.
+- **The Gemini key goes in the `x-goog-api-key` header, not `?key=`,** so it stays out of URLs
+  and access logs.

@@ -10,9 +10,10 @@ from app.api.errors import install_error_handlers
 from app.api.routes import router
 from app.config import Settings, get_settings
 from app.providers.base import Provider
+from app.providers.gemini import GeminiProvider
 from app.providers.groq import GroqProvider
 from app.providers.mock import MockProvider
-from app.routing.registry import GroqSpec, MockSpec, RegistryConfig, load_registry
+from app.routing.registry import GeminiSpec, GroqSpec, MockSpec, RegistryConfig, load_registry
 from app.routing.router import ModelRouter
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,13 @@ def build_providers(
                     logger.warning("GROQ_API_KEY is not set: skipping provider %r", name)
                     continue
                 providers[name] = GroqProvider(client, settings.groq_api_key.get_secret_value())
+            case GeminiSpec():
+                if not settings.gemini_api_key:
+                    logger.warning("GEMINI_API_KEY is not set: skipping provider %r", name)
+                    continue
+                providers[name] = GeminiProvider(
+                    client, settings.gemini_api_key.get_secret_value(), spec.thinking_level
+                )
     return providers
 
 

@@ -3,7 +3,7 @@
 An OpenAI-compatible proxy in front of multiple LLM providers, with fallback, per-key rate
 limits, exact and semantic caching, PII masking and a cost dashboard.
 
-Status: Phase 2 in progress (model aliases, retry and fallback done; Gemini adapter next). See [plan.md](plan.md) for the roadmap.
+Status: Phase 2 in progress (model aliases, retry and fallback, Gemini adapter done; live check next). See [plan.md](plan.md) for the roadmap.
 
 ## Quick start
 
