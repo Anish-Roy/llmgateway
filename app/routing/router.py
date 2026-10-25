@@ -36,8 +36,8 @@ class ModelRouter:
     For each target in the alias's list, in order:
     - success: return it;
     - not retryable (e.g. 400): on the first target, return it to the client, since another
-      provider would reject it too. On a fallback target it only means *that* provider can't
-      do it, so move on;
+      provider would reject it too. On a fallback target, or when the adapter says it's
+      provider-specific ("Gemini can't do tools"), it only rules out that provider: move on;
     - 500/502/503: retry the same provider once after a short backoff, then move on;
     - 429, timeouts, rejected gateway credentials: move on without retrying.
     If every target fails, the client gets the latest retryable error, so the status tells it
@@ -109,7 +109,7 @@ class ModelRouter:
                     err.message,
                 )
                 errors.append(err)
-                if not err.retryable and i == 0:
+                if not err.retryable and i == 0 and not err.provider_specific:
                     raise err
                 if not (err.retryable and err.retry_same_provider) or retry == self._retries:
                     break

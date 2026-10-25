@@ -136,8 +136,9 @@ def test_unsupported_input_is_an_honest_400(fields, param):
 
     assert exc_info.value.status == 400
     assert exc_info.value.param == param
-    # A 400 from a fallback target only rules out that provider (see ModelRouter).
     assert not exc_info.value.retryable
+    # "Gemini can't do this", not "the request is bad": the router tries the next provider.
+    assert exc_info.value.provider_specific
 
 
 # --- response translation ---
@@ -227,7 +228,7 @@ async def test_bad_key_400_becomes_a_502_that_falls_back():
 
 
 async def test_unknown_model_404_becomes_a_502_that_falls_back():
-    # Gemini answered a 404 with an empty, non-JSON body in testing.
+    # A 404 body may not be JSON (curl over HTTP/2 got an empty one); the mapping mustn't care.
     provider = provider_with(lambda r: httpx.Response(404, text=""))
 
     with pytest.raises(ProviderError) as exc_info:

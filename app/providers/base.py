@@ -22,6 +22,7 @@ class ProviderError(Exception):
         param: str | None = None,
         provider: str | None = None,
         retry_same_provider: bool | None = None,
+        provider_specific: bool = False,
     ) -> None:
         super().__init__(message)
         self.status = status
@@ -33,6 +34,9 @@ class ProviderError(Exception):
         # None means "decide from the status". Adapters set False for errors a retry can't fix,
         # like the gateway's own key being rejected.
         self._retry_same_provider = retry_same_provider
+        # True for "this provider can't do that" (e.g. Gemini and `tools`): the request is fine,
+        # so another provider should get a chance even though the status is a 400.
+        self.provider_specific = provider_specific
 
     @property
     def retryable(self) -> bool:

@@ -181,3 +181,37 @@ async def test_backoff_never_sleeps_past_the_deadline():
     await router.chat(REQUEST)
 
     assert 0 <= sleep.delays[0] <= 1.0
+
+
+class CantDoIt(ScriptedProvider):
+    """Rejects the request the way an adapter does for a feature it lacks (Gemini + tools)."""
+
+    async def chat(self, request):
+        self.calls += 1
+        raise ProviderError(
+            400,
+            "'tools' is not supported",
+            param="tools",
+            provider=self.name,
+            provider_specific=True,
+        )
+
+
+async def test_provider_specific_400_on_the_first_target_falls_back():
+    primary, backup = CantDoIt("primary"), ScriptedProvider("backup", "ok")
+    router, _ = router_for(primary, backup)
+
+    routed = await router.chat(REQUEST)
+
+    assert routed.target.provider == "backup"
+    assert primary.calls == 1
+
+
+async def test_provider_specific_400_everywhere_reaches_the_client():
+    router, _ = router_for(CantDoIt("primary"), CantDoIt("backup"))
+
+    with pytest.raises(ProviderError) as exc_info:
+        await router.chat(REQUEST)
+
+    assert exc_info.value.status == 400
+    assert exc_info.value.param == "tools"

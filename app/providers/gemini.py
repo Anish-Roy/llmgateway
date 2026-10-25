@@ -185,7 +185,14 @@ def from_gemini(data: dict[str, Any], requested_model: str) -> ChatResponse:
 
 
 def _bad_request(message: str, param: str) -> ProviderError:
-    return ProviderError(400, message, type="invalid_request_error", param=param, provider="gemini")
+    return ProviderError(
+        400,
+        message,
+        type="invalid_request_error",
+        param=param,
+        provider="gemini",
+        provider_specific=True,
+    )
 
 
 def _error_from_response(resp: httpx.Response) -> ProviderError:

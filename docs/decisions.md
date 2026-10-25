@@ -115,3 +115,8 @@ One entry per phase: what was chosen, and why.
   crash and not a fallback. Any 200 the adapter can't read becomes a retryable 502.
 - **The Gemini key goes in the `x-goog-api-key` header, not `?key=`,** so it stays out of URLs
   and access logs.
+- **An adapter's "this provider can't do that" 400 is `provider_specific`, so it falls back even
+  from the first target.** `strong` starts on Gemini, which lacks `tools`. Without the flag, a
+  `tools` request would get Gemini's 400 and never reach Groq, which supports it. A real
+  upstream 400 (the request is bad) still goes straight back. If every provider says
+  "can't", the client gets the 400.
