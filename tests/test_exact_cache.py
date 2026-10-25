@@ -4,14 +4,19 @@ Each gateway gets an in-memory cache of its own (an app's default caches nothing
 limiter on a frozen clock, so token headers are exact.
 """
 
+import asyncio
 import json
-from datetime import datetime
+import logging
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import httpx2
 import openai
 import psycopg
+import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import ClientDisconnect
 
 import app.main
 from app.api.auth import get_authenticator
@@ -21,9 +26,11 @@ from app.api.routes import (
     get_response_cache,
     get_usage_recorder,
 )
+from app.api.schemas import ChatRequest
 from app.auth.authenticator import Authenticator
 from app.auth.keys import InMemoryKeyStore
 from app.auth.rate_limit import RateLimiter
+from app.cache.key import cache_key
 from app.cache.store import CacheEntry, InMemoryCacheStore, PostgresCacheStore, ResponseCache
 from app.config import Settings
 from app.db.migrate import apply_migrations
@@ -41,9 +48,17 @@ MESSAGES = [{"role": "user", "content": "hello there"}]
 CHEAP = Price(input=Decimal("1.5"), output=Decimal("4"))
 
 
+class Clock:
+    def __init__(self) -> None:
+        self.now = datetime(2026, 10, 25, 12, 0, tzinfo=UTC)
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
 class Gateway:
     """An app with alias "fast" on the given mock providers (each on model "m"), an in-memory
-    cache and request log, and two keys."""
+    cache with a 1 h TTL on a clock the test moves, an in-memory request log, and two keys."""
 
     def __init__(
         self,
@@ -51,19 +66,25 @@ class Gateway:
         rpm: int = 1_000,
         tpm: int = 100_000,
         store: InMemoryCacheStore | None = None,
+        price: Callable[[Target], Price] = lambda _: CHEAP,
+        other_aliases: dict[str, list[Target]] | None = None,
     ) -> None:
         self.app = create_app()
         self.providers = providers or (("groq", MockProvider()),)
         router = ModelRouter(
-            {"fast": [Target(provider=name, model="m") for name, _ in self.providers]},
+            {
+                "fast": [Target(provider=name, model="m") for name, _ in self.providers],
+                **(other_aliases or {}),
+            },
             dict(self.providers),
             sleep=_no_sleep,
         )
         self.log = InMemoryUsageLog()
         self.writer = LogWriter(self.log)
-        recorder = UsageRecorder(self.writer, lambda _: CHEAP)
+        recorder = UsageRecorder(self.writer, price)
         self.store = store or InMemoryCacheStore()
-        self.cache = ResponseCache(self.store, ttl_s=3600, max_temperature=0.2)
+        self.clock = Clock()
+        self.cache = ResponseCache(self.store, ttl_s=3600, max_temperature=0.2, clock=self.clock)
         limiter = RateLimiter(clock=lambda: 1000.0)
         keys = InMemoryKeyStore()
         self.key, _ = keys.add("team-a", rpm_limit=rpm, tpm_limit=tpm)
@@ -422,6 +443,152 @@ async def test_cache_off_keeps_a_stream_out_of_the_cache():
 
     assert off.headers["x-gateway-cache"] == "bypass"
     assert gw.store.entries == {}
+
+
+async def test_a_stream_the_client_left_isnt_cached():
+    gw = Gateway(("groq", MockProvider(reply="one two three four")))
+    body = json.dumps(chat(stream=True)).encode()
+    received = [{"type": "http.request", "body": body, "more_body": False}]
+    sent: list[dict] = []
+
+    async def receive():
+        if received:
+            return received.pop(0)
+        await asyncio.Event().wait()
+
+    async def send(message):
+        if message["type"] == "http.response.body" and sent:
+            # The client is gone after the first chunk (ASGI 2.4: send() raises OSError).
+            raise OSError("connection lost")
+        if message["type"] == "http.response.body":
+            sent.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/v1/chat/completions",
+        "raw_path": b"/v1/chat/completions",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"content-type", b"application/json"),
+            (b"host", b"gateway.test"),
+            (b"authorization", f"Bearer {gw.key}".encode()),
+        ],
+        "client": ("127.0.0.1", 1234),
+        "server": ("gateway.test", 80),
+    }
+
+    with pytest.raises(ClientDisconnect):
+        await gw.app(scope, receive, send)
+    await gw.cache.drain()
+
+    assert gw.store.entries == {}
+    (row,) = await gw.rows()
+    assert (row.outcome, row.cache_status) == ("client_disconnect", "miss")
+
+
+async def test_a_stream_no_provider_answered_isnt_cached():
+    gw = Gateway(("flaky", MockProvider(failure_rate=1.0)))
+
+    resp = await gw.post(chat(stream=True))
+
+    assert resp.status_code == 503
+    assert gw.store.entries == {}
+
+
+# Expiry, refusals and failures around the cache.
+
+
+async def test_an_expired_answer_is_asked_for_again_and_stored_anew():
+    gw = Gateway()
+    await gw.post(chat())
+
+    gw.clock.now += timedelta(hours=1)
+    expired = await gw.post(chat())
+    gw.clock.now += timedelta(minutes=30)
+    fresh = await gw.post(chat())
+
+    assert expired.headers["x-gateway-cache"] == "miss"
+    # The new answer got a TTL of its own, from when it was stored.
+    assert fresh.headers["x-gateway-cache"] == "exact"
+    assert gw.calls == 2
+
+
+async def test_an_alias_gone_from_the_registry_isnt_served_from_the_cache():
+    gw = Gateway()
+    await gw.post(chat())
+    # Pretend the alias was renamed: its answers are still stored, under "gone".
+    (entry,) = gw.store.entries.values()
+    gone = ChatRequest.model_validate(chat(model="gone"))
+    gw.store.entries[cache_key(gone)] = entry
+
+    resp = await gw.post(chat(model="gone"))
+
+    assert resp.status_code == 404
+    _, row = await gw.rows()
+    assert (row.outcome, row.cache_status) == ("rejected", "miss")
+
+
+async def test_an_alias_without_a_provider_here_isnt_served_from_the_cache():
+    orphan = {"orphan": [Target(provider="not-configured", model="m")]}
+    gw = Gateway(other_aliases=orphan)
+    await gw.post(chat())
+    (entry,) = gw.store.entries.values()
+    gw.store.entries[cache_key(ChatRequest.model_validate(chat(model="orphan")))] = entry
+
+    resp = await gw.post(chat(model="orphan"))
+
+    assert resp.status_code == 503
+
+
+async def test_a_rate_limited_request_never_reaches_the_cache():
+    class CountingStore(InMemoryCacheStore):
+        lookups = 0
+
+        async def get(self, key: bytes, now: datetime) -> CacheEntry | None:
+            self.lookups += 1
+            return await super().get(key, now)
+
+    store = CountingStore()
+    gw = Gateway(rpm=1, store=store)
+
+    await gw.post(chat())
+    limited = await gw.post(chat())
+
+    assert limited.status_code == 429
+    assert store.lookups == 1
+    _, row = await gw.rows()
+    assert (row.outcome, row.cache_status) == ("rejected", "miss")
+
+
+async def test_a_reply_that_cant_be_priced_still_reaches_the_client(caplog):
+    def no_price(target: Target) -> Price:
+        raise KeyError(target.provider)
+
+    gw = Gateway(price=no_price)
+
+    with caplog.at_level(logging.WARNING):
+        resp = await gw.post(chat())
+
+    assert resp.status_code == 200
+    assert gw.store.entries == {}
+    assert "could not price an answer for the cache" in caplog.text
+
+
+async def test_identical_requests_at_once_both_call_the_provider():
+    # A known limit: nothing holds the second request until the first one's answer is
+    # stored. Both answers are stored under the one key; the last one stays.
+    gw = Gateway(("groq", MockProvider(latency_s=0.05)))
+
+    first, second = await asyncio.gather(gw.post(chat()), gw.post(chat()))
+
+    assert first.headers["x-gateway-cache"] == second.headers["x-gateway-cache"] == "miss"
+    assert gw.calls == 2
+    assert len(gw.store.entries) == 1
 
 
 # The openai SDK, the gateway's compatibility contract.

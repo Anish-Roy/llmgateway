@@ -624,3 +624,17 @@ One entry per phase: what was chosen, and why.
   asked for isn't kept either: a hit returns the answer only.
 - **Checked with the openai SDK** against the mock: a plain hit, then a streamed hit with
   `include_usage`, read as normal completions, with one provider call in all.
+- **The alias is checked before the lookup** (found by the step 5 tests). Without that, an
+  alias renamed or removed from the registry kept serving its stored answers until they
+  expired, and so did an alias whose providers aren't configured on this deployment. Now both
+  fail as they would without a cache: a 404 and a 503.
+- **Two identical requests at the same moment both call the provider.** Nothing holds the
+  second until the first one's answer is stored; both store under the one key, and the last
+  write stays. A test pins this down. Holding duplicates in flight (single-flight) is the fix
+  if replay traffic ever shows it matters; for now it costs one extra call per burst.
+- **What step 5 covers, beyond steps 3 and 4:** expiry and re-storing at the route, a stream
+  the client left and one no provider answered (neither stored), removed and unserved aliases,
+  a 429 never reaching the cache, a reply that can't be priced still reaching the client, and
+  concurrent duplicates. Not covered by a test: the client leaving during the lookup itself.
+  The route reports it like any other cancellation (`client_disconnect`), which
+  `test_request_logs` covers, but a cancellation can't be sent through the test transport.

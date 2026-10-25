@@ -75,9 +75,12 @@ async def chat_completions(
     # isn't cacheable or the client turned the cache off.
     cache_key = cache.key_for(body, request.headers.get(CACHE_HEADER))
     try:
+        # An alias that's gone from the registry (404), or has no provider here any more
+        # (503), fails as it would without a cache: entries stored for it aren't served.
+        model_router.targets(body.model)
         entry = await cache.get(cache_key) if cache_key is not None else None
     except BaseException as e:
-        # The lookup never raises; this is the client leaving while it ran.
+        # The lookup never raises: this is the alias check, or the client leaving.
         reservation.settle(0)
         recording.failed(e)
         raise
