@@ -893,3 +893,125 @@ One entry per phase: what was chosen, and why.
     iterative scan off.
   - **Not tested:** a case where relaxed order actually comes back out of order. It can't be
     set up on purpose. The re-sort makes the result exact whichever order the index returns.
+
+## Phase 8: PII masking
+
+- **Four detectors, in `app/guardrails/pii.py`.** Plain regexes plus checksums, no model:
+  - **email:** a common-sense pattern, not RFC 5322. It wants a dot and a 2+ letter TLD, so
+    `user@localhost` isn't masked.
+  - **Indian mobile:** ten digits starting 6-9, written whole, 5+5 or 3+3+4, after an optional
+    `+91`, `0091`, `91` or `0`.
+  - **Aadhaar:** twelve digits, whole or 4+4+4, first digit 2-9 (UIDAI issues none starting 0
+    or 1), and the Verhoeff checksum.
+  - **card:** 13 to 19 digits with spaces or dashes, the Luhn checksum, and a network's first
+    digit (2-6 or 8). Luhn alone passes one random number in ten: a millisecond timestamp
+    (`1729843200000`) did, and no card starts with 1.
+
+  No pattern starts or ends next to a digit, so a phone isn't found inside a longer number.
+  Where two matches overlap, the stronger detector wins: email, then card, then Aadhaar, then
+  phone (which has no checksum).
+- **Masking too much is the safe side, and it's pinned in a test.** A 10-digit order ID
+  starting with 9 is masked as a phone, because phones have no checksum. The model loses some
+  context; nothing leaks. The done-when's case holds the other way: a random 12-digit order ID
+  that fails Verhoeff isn't masked, nor are 16 digits that fail Luhn.
+- **Masking runs before the caches, so they never hold a real value.** It runs right after
+  the rate limit. From there on, the exact-cache key, the semantic embedding, both cache
+  tables, every provider attempt (retries and fallbacks too) and token estimates all see the
+  masked request. Only message `content` is scanned.
+- **Placeholders are numbered per kind, across all the messages, and one value keeps one
+  placeholder** (`98765 43210` and `+91 9876543210` are both `[PHONE_1]`). So two requests that
+  differ only in their PII mask to the same request and share one cache entry, which a cache
+  shared by every API key can serve safely.
+- **The real values go back into copies, never into an object the cache holds.** The exact
+  cache is shared across keys, so a value written into a stored response would reach another
+  key. Plain replies and hits are copied before they're restored. Streamed chunks are rebuilt,
+  so the router's record of the stream, which the cache stores from, keeps the placeholders.
+  Breaking either rule on purpose fails the route tests (4 and 5 of them).
+- **A stream holds back a tail that could still become a placeholder.** A placeholder can
+  arrive split (`[EMA` + `IL_1]`), so the tail from the last `[` is held while it's a proper
+  prefix of one of the request's placeholders. It goes out with the choice's finish_reason, or
+  as one more chunk before `[DONE]` or an error event. Unit tests split a text at every index
+  and feed it one character at a time. The mock never splits a placeholder, so a scripted
+  provider in the route tests does.
+- **Only the request's own placeholders are restored.** One the model makes up, or
+  `[EMAIL_2]` when there was one email, stays as it is.
+- **The detectors run in linear time; first drafts didn't.** Every request is scanned, so a
+  long one mustn't be slow:
+  - **email:** tried from inside a run of address characters, it rescanned the run from every
+    character, so 20k letters took 0.34 s. It now starts only where a run starts.
+  - **overlaps:** each match was checked against every earlier one, so 16k matches took 6.7 s.
+    The accepted spans are kept sorted and a new match is checked against its two neighbours:
+    80k matches in 1 MB take 0.7 s.
+
+  Four tests fail if either comes back.
+- **The log says which kinds were masked, never the values.** `request_logs.pii_types`
+  (migration 005) is a sorted `text[]`, with a CHECK that allows only the four kinds. A bug
+  that tried to write a value there would lose the row, not leak it. The route records the
+  kinds right after masking, so every ending has them: replies, streams, cache hits, 404s and
+  provider failures. A 429 comes before masking and logs `{}`.
+- **No `TRUNCATE` of the caches in migration 005.** Migrations re-run on every startup, so it
+  would empty both caches at every boot. It isn't needed: a row stored before Phase 8 with raw
+  PII is keyed on the raw text, which a masked request can't produce, so it's never served,
+  and it expires within `CACHE_TTL_S` (24 h). To drop such rows at once:
+  `DELETE FROM response_cache; DELETE FROM semantic_cache;`.
+- **Found live: a migration not applied loses every request-log row, quietly.** The live check
+  ran before `scripts.migrate`, so every insert failed on the missing `pii_types` column. The
+  requests were all served, and the only trace was a warning per request. That's the Phase 5
+  rule (logging never fails a request) working as designed, but a deploy has to run the
+  migration before the new code. Phase 12's deploy should run `scripts.migrate` first.
+- **Measured live: models keep the placeholders exactly, but gpt-oss often drops them**
+  (2026-10-25, `scripts/check_pii_live.py`). It sends 8 prompts that ask for their values back
+  (22 values), plain and streamed, with the cache off, at the providers' default temperature:
+
+  | Model (alias) | Values back, as sent | With a system note |
+  |---|---|---|
+  | Groq gpt-oss-20b (`fast`) | 13, 15, 18 of 22 (3 runs) | 22, 22, 22 of 22 |
+  | Groq gpt-oss-120b (`strong`) | 20 of 22 | 22 of 22 |
+  | Gemini 3.5 Flash-Lite (`fast` with Groq off) | 22 of 22 | 22 of 22 |
+
+  - **Mangled: none.** No reply had `EMAIL_1`, `\[EMAIL\_1\]` or `[Email 1]`: every placeholder
+    a model wrote, it wrote exactly, so restore-by-exact-match holds up.
+  - **Dropped: what gpt-oss does.** It treats a placeholder as a template slot or as private
+    data. It refused outright ("I'm sorry, but I can't help with that") for "repeat back
+    [PHONE_1]" and for the Aadhaar question, and it put in stand-ins of its own
+    (`555-123-4567`, `alice@example.com`, "[Address]").
+  - **The note** was one system message, sent from the client for the experiment: "Text in
+    square brackets such as [EMAIL_1] or [PHONE_1] stands for a real value the user gave,
+    hidden for privacy. Treat it as that value, and wherever the value belongs in your reply,
+    copy the placeholder exactly, brackets included." With it, every model brought back every
+    value, in every run.
+  - **Small sample:** 16 calls per run. The gap on gpt-oss-20b (13 to 18 against 22 three
+    times) is large next to its run-to-run spread, but it's still 3 runs.
+- **Checked live on the real server and Postgres:**
+  - **Cache hits:** a PII request at temperature 0 was a miss, then an exact hit. The hit and
+    a streamed replay both came back with the real values.
+  - **No raw values stored:** none of them appear in `response_cache`, `semantic_cache` or
+    `request_logs`, and the server log doesn't have them either.
+  - **What's stored instead:** the stored answer reads "Write one line to [EMAIL_1], cc
+    [PHONE_1], quoting card [CARD_1]."
+  - **The log row:** after the migration, it has `pii_types = {card,email,phone}`.
+- **Known limits, in the README too:**
+  - **Tool calls:** arguments aren't masked in requests or restored in replies.
+  - **Literal placeholders:** a placeholder the user types (`[EMAIL_1]`) is replaced with the
+    request's first email, if it has one.
+  - **Order IDs:** 10-digit ones starting 6-9 are masked as phones.
+  - **Coverage:** only the four kinds. Names, addresses, PAN, IFSC, passport numbers and
+    non-Indian phone formats pass through.
+  - **One spelling restored:** a value written two ways comes back in the spelling first seen.
+  - **gpt-oss without the note:** it drops placeholders, as measured above.
+- **Phase 8 "done when": unit tests cover positive and negative cases (2026-10-25).**
+  - **Positive cases (`tests/test_pii.py`):** every phone, Aadhaar and card format, and several
+    in one text.
+  - **Negative cases:** a 12-digit order ID that fails Verhoeff, 12 digits starting with 1,
+    16 digits that fail Luhn, phone-length numbers starting 1-5, 9 and 11 digits, a ms
+    timestamp, a date-time, `user@localhost`, versions and ports.
+  - **Each build item in the plan, and where it is:**
+    - the detectors, with Verhoeff and Luhn: `app/guardrails/pii.py`;
+    - mask before the provider, `[EMAIL_1]`-style: `mask_request`, called in
+      `app/api/routes.py`;
+    - put the real values back (always on): `restore_response`, and `StreamRestorer` in
+      `app/api/sse.py`;
+    - log that masking happened and which types: `request_logs.pii_types`;
+    - mask before the cache: the route masks before either cache key is computed, and
+      `tests/test_pii_route.py` checks both tables after every path.
+  - **Tests:** 699 pass, Postgres included.

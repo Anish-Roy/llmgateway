@@ -3,9 +3,9 @@
 An OpenAI-compatible proxy in front of multiple LLM providers, with fallback, per-key rate
 limits, exact and semantic caching, PII masking and a cost dashboard.
 
-Status: Phase 6 done (Groq + Gemini behind model aliases with retry and fallback, streaming,
-API keys, per-key rate limits, a request log with the cost of every call, and an exact-match
-response cache). See [plan.md](plan.md) for the roadmap.
+Status: Phase 8 done (Groq + Gemini behind model aliases with retry and fallback, streaming,
+API keys, per-key rate limits, a request log with the cost of every call, an exact-match and
+an opt-in semantic cache, and PII masking). See [plan.md](plan.md) for the roadmap.
 
 ## Quick start
 
@@ -171,6 +171,47 @@ order: "convert a string to an integer in JavaScript" and "an integer to a strin
 catches questions a digit apart ($1.10 vs $1.20) but not those. The log is adversarial on
 purpose (one near pair in three is a trap), so real traffic should do better, but that isn't
 measured. Details and what was tried (a cross-encoder check, which did worse): `docs/decisions.md`.
+
+### PII masking
+
+Every request has its emails, Indian mobile numbers, Aadhaar numbers and card numbers swapped
+for placeholders before anything else sees it. The providers, both caches and the request
+log only ever get `[EMAIL_1]`, `[PHONE_1]`, `[AADHAAR_1]`, `[CARD_1]`. The reply gets the real
+values back, plain or streamed, so a client sees its own data as usual:
+
+```
+client sends:    Write to priya@example.com and call 98765 43210.
+provider gets:   Write to [EMAIL_1] and call [PHONE_1].
+provider says:   Done: I've drafted a note to [EMAIL_1].
+client gets:     Done: I've drafted a note to priya@example.com.
+```
+
+Aadhaar numbers must pass the Verhoeff checksum, and cards Luhn and a card network's first
+digit, so most random 12- or 16-digit IDs aren't masked. Each request-log row has
+`pii_types`, the kinds masked (`{email,phone}`), never the values. Placeholders are the same
+for the same request shape, so two requests that differ only in their PII share one cache
+entry, and each gets its own values back.
+
+**Measured** with `scripts/check_pii_live.py` (8 prompts asking for 22 values back, plain and
+streamed): every placeholder a model wrote came back exactly as sent, so restoring by exact
+match works. Gemini 3.5 Flash-Lite returned all 22 values. Groq's gpt-oss-20b returned only
+13 to 18 of 22: it treats a placeholder as a blank to fill or as private data, and refuses
+or makes up a stand-in. A one-line system note explaining the placeholders brought every
+model to 22 of 22 (details: `docs/decisions.md`).
+
+Known limits:
+
+- **Tool calls:** arguments aren't masked in requests or restored in replies. Only message
+  text is.
+- **Coverage:** only those four kinds. Names, addresses, PAN, passport numbers and non-Indian
+  phone formats pass through.
+- **Over-masking:** a 10-digit number starting 6-9 is masked as a phone, even when it's an
+  order ID.
+- **Literal placeholders:** if a user types `[EMAIL_1]` themselves, it's replaced with the
+  request's first email.
+- **One spelling restored:** a value written two ways comes back in the spelling first seen.
+- **Dropped placeholders:** a model that drops a placeholder drops the value with it, as
+  gpt-oss does without the note.
 
 ## Layout
 
