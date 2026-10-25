@@ -22,6 +22,7 @@ from app.providers.gemini import GeminiProvider, to_gemini
 from app.providers.groq import GroqProvider
 from app.routing.registry import Target
 from app.routing.router import ModelRouter
+from tests.auth_helpers import authorize
 
 REQUEST = ChatRequest(
     model="gemini-3.5-flash-lite", messages=[{"role": "user", "content": "hi"}], stream=True
@@ -225,7 +226,7 @@ async def test_groq_outage_before_the_first_token_streams_from_gemini():
     app = create_app()
     app.dependency_overrides[get_model_router] = lambda: model_router
     client = openai.AsyncOpenAI(
-        api_key="unused-until-phase-4",
+        api_key=authorize(app),
         base_url="http://gateway.test/v1",
         http_client=httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app)),
         max_retries=0,

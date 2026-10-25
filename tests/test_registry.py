@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from app.config import Settings
 from app.routing.registry import MockSpec, RegistryConfig, Target, load_registry
+from tests.auth_helpers import authorize
 
 
 def test_shipped_registry_file_is_valid():
@@ -76,10 +77,13 @@ def test_app_serves_the_mock_alias_from_the_shipped_registry():
     from app.main import create_app
 
     # Entering the context runs the lifespan, so this goes through the real registry file.
-    with TestClient(create_app()) as client:
+    app = create_app()
+    key = authorize(app)
+    with TestClient(app) as client:
         resp = client.post(
             "/v1/chat/completions",
             json={"model": "mock", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": f"Bearer {key}"},
         )
 
     assert resp.status_code == 200
@@ -92,10 +96,13 @@ def test_demo_fallback_alias_falls_back_to_mock():
 
     from app.main import create_app
 
-    with TestClient(create_app()) as client:
+    app = create_app()
+    key = authorize(app)
+    with TestClient(app) as client:
         resp = client.post(
             "/v1/chat/completions",
             json={"model": "demo-fallback", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": f"Bearer {key}"},
         )
 
     assert resp.status_code == 200

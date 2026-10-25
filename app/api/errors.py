@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 from app.api.schemas import ErrorDetail, ErrorResponse
+from app.auth.authenticator import AuthError, KeyStoreUnavailable
 from app.providers.base import ProviderError
 from app.routing.router import ModelNotFoundError
 
@@ -64,6 +65,17 @@ async def _model_not_found(request: Request, exc: ModelNotFoundError) -> JSONRes
     )
 
 
+async def _auth_error(request: Request, exc: AuthError) -> JSONResponse:
+    # OpenAI's shape for a bad key: the SDK raises AuthenticationError on the 401 status.
+    response = error_response(401, exc.message, "invalid_request_error", code="invalid_api_key")
+    response.headers["WWW-Authenticate"] = "Bearer"
+    return response
+
+
+async def _key_store_unavailable(request: Request, exc: KeyStoreUnavailable) -> JSONResponse:
+    return error_response(503, str(exc), "api_error", code="service_unavailable")
+
+
 async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     # FastAPI's default is a 422 with {"detail": [...]}. OpenAI answers bad input with a 400.
     first = exc.errors()[0]
@@ -85,6 +97,8 @@ async def _unhandled_error(request: Request, exc: Exception) -> JSONResponse:
 def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ProviderError, _provider_error)
     app.add_exception_handler(ModelNotFoundError, _model_not_found)
+    app.add_exception_handler(AuthError, _auth_error)
+    app.add_exception_handler(KeyStoreUnavailable, _key_store_unavailable)
     app.add_exception_handler(RequestValidationError, _validation_error)
     app.add_exception_handler(HTTPException, _http_error)
     app.add_exception_handler(Exception, _unhandled_error)

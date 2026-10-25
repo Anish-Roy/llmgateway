@@ -15,6 +15,7 @@ from app.providers.gemini import GeminiProvider
 from app.providers.groq import GroqProvider
 from app.routing.registry import Target
 from app.routing.router import ModelRouter
+from tests.auth_helpers import authorize
 
 GEMINI_OK = {
     "candidates": [{"content": {"parts": [{"text": "Hi from Gemini"}]}, "finishReason": "STOP"}],
@@ -38,7 +39,7 @@ def sdk_client(model_router: ModelRouter) -> openai.AsyncOpenAI:
     app = create_app()
     app.dependency_overrides[get_model_router] = lambda: model_router
     return openai.AsyncOpenAI(
-        api_key="unused-until-phase-4",
+        api_key=authorize(app),
         base_url="http://gateway.test/v1",
         http_client=httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app)),
         max_retries=0,

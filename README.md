@@ -25,9 +25,9 @@ live in [config/models.yaml](config/models.yaml):
 |---|---|---|
 | `fast` | Groq `openai/gpt-oss-20b` → Gemini `gemini-3.5-flash-lite` | cheap, quick |
 | `strong` | Groq `openai/gpt-oss-120b` → Gemini `gemini-3.8-flash` | better answers |
-| `mock` | mock provider | no keys needed |
-| `demo-fallback` | always-failing mock → mock | fallback demo, no keys |
-| `demo-midstream` | mock that fails mid-answer → mock | streaming failure demo, no keys |
+| `mock` | mock provider | no provider keys needed |
+| `demo-fallback` | always-failing mock → mock | fallback demo, no provider keys |
+| `demo-midstream` | mock that fails mid-answer → mock | streaming failure demo, no provider keys |
 
 `GET /v1/models` lists the aliases this deployment can serve. If a provider times out, rate
 limits (429) or errors (5xx), the gateway retries once where that helps and moves to the next
@@ -42,19 +42,29 @@ your keys can actually use:
 uv run python -m scripts.check_models
 ```
 
+Every `/v1` request needs a gateway API key (`/health` doesn't). Keys are created with a CLI
+that talks to Postgres directly; the plain key is printed once and only its hash is stored:
+
+```bash
+uv run python -m scripts.create_key create "alice" --rpm 60 --tpm 100000
+uv run python -m scripts.create_key list
+uv run python -m scripts.create_key revoke 1     # applies within KEY_CACHE_TTL_S (30 s)
+```
+
 Try it with the official `openai` SDK (needs `GROQ_API_KEY` and `GEMINI_API_KEY` in `.env`):
 
 ```bash
-uv run python scripts/smoke_openai_sdk.py                  # model "fast"
-uv run python scripts/smoke_openai_sdk.py --model strong
-uv run python scripts/smoke_openai_sdk.py --model mock     # no keys needed
+GATEWAY_API_KEY=gw-... uv run python scripts/smoke_openai_sdk.py                  # model "fast"
+GATEWAY_API_KEY=gw-... uv run python scripts/smoke_openai_sdk.py --model strong
+GATEWAY_API_KEY=gw-... uv run python scripts/smoke_openai_sdk.py --model mock     # no provider keys needed
 ```
 
-To watch fallback without any keys, ask for `demo-fallback`. Its first provider always fails
+To watch fallback without any provider keys, ask for `demo-fallback`. Its first provider always fails
 with a 503 and is retried once, then the mock answers:
 
 ```bash
-curl -si localhost:8000/v1/chat/completions -H 'content-type: application/json' \
+curl -si localhost:8000/v1/chat/completions -H "Authorization: Bearer $GATEWAY_API_KEY" \
+  -H 'content-type: application/json' \
   -d '{"model": "demo-fallback", "messages": [{"role": "user", "content": "hi"}]}'
 ```
 
@@ -70,7 +80,8 @@ part of the answer has been sent, a failure ends the stream with an error event 
 `[DONE]`, and the openai SDK raises it as an `APIError`. `demo-midstream` shows this:
 
 ```bash
-curl -sN localhost:8000/v1/chat/completions -H 'content-type: application/json' \
+curl -sN localhost:8000/v1/chat/completions -H "Authorization: Bearer $GATEWAY_API_KEY" \
+  -H 'content-type: application/json' \
   -d '{"model": "demo-midstream", "stream": true, "messages": [{"role": "user", "content": "hi"}]}'
 ```
 

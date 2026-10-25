@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # x 30 s could keep a client waiting two minutes.
     request_deadline_s: float = 45.0
 
+    # How long a key lookup is cached. Also how long a revoked key keeps working, and how long
+    # a changed limit takes to apply, on a running gateway.
+    key_cache_ttl_s: float = 30.0
+
     # Model aliases and the providers behind them. See config/models.yaml.
     models_file: Path = Path(__file__).resolve().parent.parent / "config" / "models.yaml"
 

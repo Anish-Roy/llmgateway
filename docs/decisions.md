@@ -330,3 +330,30 @@ One entry per phase: what was chosen, and why.
   "revoked" from "never existed" in its logs. Both still get the same 401.
 - **Revoking sets `active = false` instead of deleting the row,** so Phase 5's request logs
   keep pointing at a real key, and revoking twice is harmless.
+- **Auth is a router-level dependency on `/v1`, so `/v1/models` needs a key too,** as on OpenAI.
+  `/health` stays open for the hosting platform's checks. The key's record goes on
+  `request.state` for the rate limiter and Phase 5's logs. A request with no key and a bad body
+  gets the 401, not a 400 about the body.
+- **Key lookups are cached in memory for 30 s (`KEY_CACHE_TTL_S`), unknown keys included.** A
+  busy client costs one query per 30 s instead of one per request, and a client retrying a bad
+  key doesn't reach the database at all. The price is written down rather than engineered
+  away: the CLI is a separate process and can't clear the gateway's cache, so a revoke, or a
+  new limit, takes effect within one TTL. Checked live: a revoked key was still accepted right
+  after `revoke` and got a 401 once the TTL passed.
+- **The cache is bounded (10,000 entries, oldest dropped first).** Without a bound, a stream of
+  made-up keys would grow it forever. Dropping a real key's entry only costs a lookup. Strings
+  that can't be keys (wrong prefix or length, someone's OpenAI key) are rejected before any
+  lookup or cache entry.
+- **No request coalescing.** If many requests with the same uncached key arrive at once, each
+  queries the database. It happens once per key per TTL, and the pool caps the connections.
+- **Every key problem is the same 401 that OpenAI sends** (`invalid_request_error`, code
+  `invalid_api_key`, plus `WWW-Authenticate: Bearer`), so the SDK raises `AuthenticationError`.
+  The messages differ (no key, not Bearer, incorrect, revoked) because each needs a different
+  fix. Telling the holder of a revoked key that it's revoked gives nothing away: they already
+  have the key. Messages show at most the first 10 characters of what was sent.
+- **A database failure during the lookup is a 503, not a 401.** The key may be fine, and a 401
+  would tell a client to stop using it. The failure isn't cached, so the next request tries
+  again. Keys already in the cache keep working while the database is down.
+- **Tests use the real authenticator over an in-memory store** (`tests/auth_helpers.authorize`),
+  overriding `get_authenticator` the way `get_model_router` is overridden. One test runs the
+  real startup against Postgres with keys made by the CLI's functions.

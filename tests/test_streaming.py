@@ -15,6 +15,7 @@ from app.providers.base import ProviderError
 from app.providers.mock import MockProvider
 from app.routing.registry import Target
 from app.routing.router import ModelRouter
+from tests.auth_helpers import authorize
 
 MESSAGES = [{"role": "user", "content": "hello there"}]
 
@@ -29,12 +30,13 @@ def make_app(*providers: tuple[str, MockProvider], **router_kwargs):
         **router_kwargs,
     )
     app.dependency_overrides[get_model_router] = lambda: model_router
+    app.state.test_key = authorize(app)
     return app
 
 
 def sdk_client(app) -> openai.AsyncOpenAI:
     return openai.AsyncOpenAI(
-        api_key="unused-until-phase-4",
+        api_key=app.state.test_key,
         base_url="http://gateway.test/v1",
         http_client=httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app)),
         max_retries=0,
@@ -49,6 +51,7 @@ async def raw_events(app, **body) -> list[str]:
         resp = await client.post(
             "/v1/chat/completions",
             json={"model": "fast", "messages": MESSAGES, "stream": True, **body},
+            headers={"Authorization": f"Bearer {app.state.test_key}"},
         )
     assert resp.headers["content-type"].startswith("text/event-stream")
     assert resp.text.endswith("\n\n")
@@ -247,7 +250,11 @@ async def test_client_disconnect_closes_the_upstream_stream():
         "raw_path": b"/v1/chat/completions",
         "query_string": b"",
         "root_path": "",
-        "headers": [(b"content-type", b"application/json"), (b"host", b"gateway.test")],
+        "headers": [
+            (b"content-type", b"application/json"),
+            (b"host", b"gateway.test"),
+            (b"authorization", f"Bearer {app.state.test_key}".encode()),
+        ],
         "client": ("127.0.0.1", 1234),
         "server": ("gateway.test", 80),
     }

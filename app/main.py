@@ -8,6 +8,8 @@ from fastapi import FastAPI
 from app import __version__
 from app.api.errors import install_error_handlers
 from app.api.routes import router
+from app.auth.authenticator import Authenticator
+from app.auth.keys import PostgresKeyStore
 from app.config import Settings, get_settings
 from app.db.pool import open_pool
 from app.providers.base import Provider
@@ -78,6 +80,9 @@ def create_app() -> FastAPI:
             open_pool(settings.database_url) as db_pool,
         ):
             app.state.db_pool = db_pool
+            app.state.authenticator = Authenticator(
+                PostgresKeyStore(db_pool), ttl_s=settings.key_cache_ttl_s
+            )
             providers = build_providers(config, settings, client)
             app.state.model_router = ModelRouter(
                 config.aliases, providers, deadline_s=settings.request_deadline_s

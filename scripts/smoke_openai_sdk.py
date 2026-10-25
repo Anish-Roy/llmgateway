@@ -1,10 +1,12 @@
 """Manual check: the openai SDK against a running gateway. Calls the real provider; not for CI.
 
 uv run uvicorn app.main:app            # with GROQ_API_KEY / GEMINI_API_KEY in .env
-uv run python scripts/smoke_openai_sdk.py --model fast     # or strong, mock, demo-fallback
+uv run python -m scripts.create_key create smoke           # once; then export the key it prints
+GATEWAY_API_KEY=gw-... uv run python scripts/smoke_openai_sdk.py --model fast
 """
 
 import argparse
+import os
 
 from openai import OpenAI
 
@@ -14,10 +16,16 @@ def main() -> None:
     parser.add_argument("--base-url", default="http://localhost:8000/v1")
     parser.add_argument("--model", default="fast", help="an alias from config/models.yaml")
     parser.add_argument("--prompt", default="Say hello in five words.")
+    parser.add_argument(
+        "--api-key",
+        default=os.environ.get("GATEWAY_API_KEY"),
+        help="a gateway key from scripts/create_key.py (default: $GATEWAY_API_KEY)",
+    )
     args = parser.parse_args()
 
-    # The gateway doesn't check keys until Phase 4, but the SDK requires one.
-    client = OpenAI(base_url=args.base_url, api_key="unused-until-phase-4", max_retries=0)
+    if not args.api_key:
+        parser.error("set GATEWAY_API_KEY or pass --api-key")
+    client = OpenAI(base_url=args.base_url, api_key=args.api_key, max_retries=0)
     raw = client.chat.completions.with_raw_response.create(
         model=args.model,
         messages=[{"role": "user", "content": args.prompt}],

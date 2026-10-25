@@ -11,6 +11,7 @@ from app.main import create_app
 from app.providers.mock import MockProvider
 from app.routing.registry import Target
 from app.routing.router import ModelRouter
+from tests.auth_helpers import authorize
 
 
 def make_client(provider: MockProvider) -> openai.AsyncOpenAI:
@@ -22,7 +23,7 @@ def make_client(provider: MockProvider) -> openai.AsyncOpenAI:
     # The openai SDK is built on httpx2. ASGITransport calls the app directly: no server or network.
     http_client = httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app))
     return openai.AsyncOpenAI(
-        api_key="unused-until-phase-4",
+        api_key=authorize(app),
         base_url="http://gateway.test/v1",
         http_client=http_client,
         max_retries=0,
@@ -132,7 +133,7 @@ async def test_sdk_gets_a_reply_through_fallback():
     )
     app.dependency_overrides[get_model_router] = lambda: model_router
     client = openai.AsyncOpenAI(
-        api_key="unused-until-phase-4",
+        api_key=authorize(app),
         base_url="http://gateway.test/v1",
         http_client=httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app)),
         max_retries=0,

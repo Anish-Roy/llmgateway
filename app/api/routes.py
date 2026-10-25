@@ -2,12 +2,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 
+from app.api.auth import require_api_key
 from app.api.schemas import ChatRequest, ChatResponse, Model, ModelList
 from app.api.sse import sse_response
 from app.routing.registry import Target
 from app.routing.router import ModelRouter
 
-router = APIRouter(prefix="/v1")
+# Every /v1 route needs a key, /v1/models included, as on OpenAI. /health stays open.
+router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_key)])
 
 
 def get_model_router(request: Request) -> ModelRouter:
