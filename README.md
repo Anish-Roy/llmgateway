@@ -249,7 +249,7 @@ uv run python -m scripts.eval_router --show-misses     # offline, on data/querie
 `docs/decisions.md`): `auto` sends 64% of the test split to `fast`, about 32% cheaper than
 sending everything to `strong` at list price. 2 of 36 hard prompts went to `fast` (6%), and 2
 of 64 easy ones went to `strong` (3%). The plan's first keyword list (`write code`, `prove`,
-`step by step`, `analyze`) sent 81% of the hard prompts to `fast`.
+`step by step`, `analyze`) sent half of the hard test prompts to `fast`.
 
 **Spot-checked live** with `scripts/check_router_live.py`: 26 prompts `auto` sends to `fast`,
 including all 11 labelled hard, were answered by both aliases. `fast` got every one right,

@@ -1082,9 +1082,10 @@ One entry per phase: what was chosen, and why.
   - **The split:** meaning groups (a prompt and its `dup_of` rephrasings) are split by a hash,
     giving 278 train and 100 test prompts, so a rephrasing is never on the other side of its
     original.
-  - **The choice rule, set before the sweep:** the length threshold with the fewest hard
-    prompts sent to `fast` on train, as long as no more than 2% of easy prompts go to
-    `strong`. A hard prompt on `fast` risks a worse answer; an easy one on `strong` costs
+  - **The choice rule, written after seeing the sweep (unlike Phase 7's, which came first):**
+    the length threshold with the fewest hard prompts sent to `fast` on train, as long as no
+    more than 2% of easy train prompts go to `strong`. Only the train columns were used to
+    pick. A hard prompt on `fast` risks a worse answer; an easy one on `strong` costs
     one request at twice the price.
   - **The sweep:**
 
@@ -1104,10 +1105,12 @@ One entry per phase: what was chosen, and why.
     120b), so this is about 32% less than sending everything to `strong`, if both used the
     same tokens. Phase 11's replay measures it for real.
   - **Against the plan's first keyword list** (`write code`, `prove`, `step by step`,
-    `analyze`), with the other rules the same: 91% of hard train prompts and 81% of hard
-    test prompts went to `fast`. Few prompts in the dataset use those exact phrases.
-  - **Which rule decided, all 378 prompts:** `default` 266, `keyword` 101, `long_prompt` 7,
-    `pasted_text` 4.
+    `analyze`), with the other rules the same (length at 20): 54% of hard train prompts and
+    50% of hard test prompts went to `fast`. Few prompts in the dataset use those exact
+    phrases, so only the length rule catches anything.
+  - **Which rule decided, all 378 prompts:** `default` 255, `keyword` 63, `long_prompt` 56,
+    `pasted_text` 4. Length is checked before keywords, so many keyword prompts are counted
+    as `long_prompt`.
   - **Where it fails:** short hard prompts with no keyword, such as "How many different ways
     can 8 people sit around a round table?", "sql query for second highest salary in
     employees table" and "postgres vs mongodb for an e-commerce app built by a small team,
@@ -1130,9 +1133,10 @@ One entry per phase: what was chosen, and why.
     - **The one slip:** in the pandas-merge answer, a side remark that NaN keys are
       "considered distinct" is wrong (pandas matches NaN keys to each other). Its main
       diagnosis, many-to-many keys, is right, and `strong` was vague on the same point.
-  - **Verdict:** on this sample, sending these prompts to `fast` loses no quality that
-    matters. "Hard" in this dataset mostly means "longer answer", which gpt-oss-20b handles.
-    It's 26 prompts judged by one reader, not a benchmark.
+  - **First-pass verdict, pending the user's own read of `docs/router_spotcheck.md`:** on
+    this sample, sending these prompts to `fast` loses no quality that matters. "Hard" in
+    this dataset mostly means "longer answer", which gpt-oss-20b handles. It's 26 prompts
+    judged by one reader, not a benchmark.
 - **The numbers are optimistic, and the README says so.**
   - **The keywords weren't written blind:** the list was written after reading the dataset.
     The split only keeps the length threshold honest.
