@@ -63,3 +63,24 @@ One entry per phase: what was chosen, and why.
   one), not a 404.
 - **The router passes the concrete model with `request.model_copy(update=...)`,** so the
   `Provider` protocol didn't change and adapters never see aliases.
+- **Two separate questions about a failure: "try another provider?" and "retry this one?"**
+  `ProviderError.retryable` (timeouts, 429, 5xx) answers the first and
+  `retry_same_provider` (500/502/503 only) the second. A 429 isn't retried on the same
+  provider, because its quota won't refill in a few hundred ms. A timeout isn't either,
+  because a second wait would use up the time the fallback needs. A rejected gateway key
+  (our 502) is marked not worth retrying: the same key fails the same way.
+- **A 400 from the first provider goes straight back; a 400 from a fallback doesn't.** The
+  first provider rejecting the request means it's bad. A fallback rejecting it only means
+  *that* provider can't do it (say, a parameter Gemini lacks), so the router moves on.
+- **When everything fails, the client gets the latest *retryable* error.** If the primary
+  gave a 503 and the backup a 400, the request is fine and the gateway is just having a bad
+  moment, so the client should see "try again", not "your request is invalid". If the last
+  error is a 429, the openai SDK backs off before retrying.
+- **One deadline for the whole request (`REQUEST_DEADLINE_S`, 45 s), as well as the 30 s
+  per-call timeout.** Otherwise two providers with two attempts each could take two minutes.
+  The deadline also caps the backoff sleep. Clients add their own retries on top (the openai
+  SDK's default `max_retries=2`), so a gateway that keeps retrying makes the wait worse.
+- **Backoff is exponential with full jitter (0–250 ms for the single retry), and `sleep` is
+  injected,** so tests check the retry policy without waiting.
+- **`x-gateway-attempts` and `x-gateway-fallback` headers** next to `x-gateway-provider`.
+  They make the fallback demo visible from `curl -i`, and Phase 5 logs the same values.

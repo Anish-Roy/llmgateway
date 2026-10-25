@@ -39,7 +39,10 @@ def error_response(
 
 
 async def _provider_error(request: Request, exc: ProviderError) -> JSONResponse:
-    logger.warning("provider %s failed: %s %s", exc.provider, exc.status, exc.message)
+    if exc.provider:
+        logger.warning("provider %s failed: %s %s", exc.provider, exc.status, exc.message)
+    else:
+        logger.warning("request failed: %s %s", exc.status, exc.message)
     return error_response(exc.status, exc.message, exc.type, exc.param, exc.code)
 
 

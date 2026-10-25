@@ -20,7 +20,11 @@ class Settings(BaseSettings):
     groq_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
 
+    # Per provider call (the HTTP client's timeout).
     request_timeout_s: float = 30.0
+    # For the whole request, across retries and fallbacks. Without it, 2 providers x 2 tries
+    # x 30 s could keep a client waiting two minutes.
+    request_deadline_s: float = 45.0
 
     # Model aliases and the providers behind them. See config/models.yaml.
     models_file: Path = Path(__file__).resolve().parent.parent / "config" / "models.yaml"

@@ -62,6 +62,7 @@ async def test_error_status_becomes_provider_error(status, retryable):
     assert (err.status, err.message, err.type) == (status, "nope", "some_type")
     assert err.code == "some_code"
     assert err.retryable is retryable
+    assert err.retry_same_provider is (status in (500, 503))
 
 
 @pytest.mark.parametrize("status", [401, 403])
@@ -72,6 +73,9 @@ async def test_rejected_gateway_key_is_not_reported_as_client_auth_error(status)
         await provider.chat(REQUEST)
 
     assert exc_info.value.status == 502
+    # Worth trying another provider, but retrying Groq with the same bad key is pointless.
+    assert exc_info.value.retryable
+    assert not exc_info.value.retry_same_provider
 
 
 async def test_unmodelled_fields_are_forwarded():
@@ -114,6 +118,7 @@ async def test_timeout_becomes_504():
 
     assert exc_info.value.status == 504
     assert exc_info.value.retryable
+    assert not exc_info.value.retry_same_provider
 
 
 async def test_connection_failure_becomes_502():

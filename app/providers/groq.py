@@ -19,7 +19,11 @@ class GroqProvider:
     async def chat(self, request: ChatRequest) -> ChatResponse:
         if not self._api_key:
             raise ProviderError(
-                500, "GROQ_API_KEY is not set", type="server_error", provider=self.name
+                500,
+                "GROQ_API_KEY is not set",
+                type="server_error",
+                provider=self.name,
+                retry_same_provider=False,
             )
 
         body = request.model_dump(exclude_none=True)
@@ -55,6 +59,7 @@ def _error_from_response(resp: httpx.Response) -> ProviderError:
             "Upstream provider rejected the gateway's credentials",
             type="api_error",
             provider="groq",
+            retry_same_provider=False,
         )
     return ProviderError(
         resp.status_code,

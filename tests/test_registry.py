@@ -85,3 +85,19 @@ def test_app_serves_the_mock_alias_from_the_shipped_registry():
     assert resp.status_code == 200
     assert resp.headers["x-gateway-provider"] == "mock"
     assert resp.json()["model"] == "mock-model"
+
+
+def test_demo_fallback_alias_falls_back_to_mock():
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    with TestClient(create_app()) as client:
+        resp = client.post(
+            "/v1/chat/completions",
+            json={"model": "demo-fallback", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    assert resp.status_code == 200
+    assert resp.headers["x-gateway-provider"] == "mock"
+    assert resp.headers["x-gateway-fallback"] == "true"

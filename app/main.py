@@ -50,7 +50,9 @@ def create_app() -> FastAPI:
         # One pooled HTTP client for all provider calls, closed on shutdown.
         async with httpx.AsyncClient(timeout=settings.request_timeout_s) as client:
             providers = build_providers(config, settings, client)
-            app.state.model_router = ModelRouter(config.aliases, providers)
+            app.state.model_router = ModelRouter(
+                config.aliases, providers, deadline_s=settings.request_deadline_s
+            )
             yield
 
     app = FastAPI(title="LLM Gateway", version=__version__, lifespan=lifespan)

@@ -26,4 +26,6 @@ async def chat_completions(
     routed = await model_router.chat(body)
     # The registry name ("groq", "flaky"...), so the fallback demo shows which entry answered.
     response.headers["x-gateway-provider"] = routed.target.provider
+    response.headers["x-gateway-attempts"] = str(routed.attempts)
+    response.headers["x-gateway-fallback"] = "true" if routed.fallback else "false"
     return routed.response

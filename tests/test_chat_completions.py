@@ -1,5 +1,7 @@
 """Contract tests: the official openai SDK, talking to the app in memory, against the mock."""
 
+import asyncio
+
 import httpx2
 import openai
 import pytest
@@ -125,3 +127,38 @@ async def test_response_names_the_provider_that_served_it():
     )
 
     assert raw.headers["x-gateway-provider"] == "mock"
+
+
+async def test_sdk_gets_a_reply_through_fallback():
+    flaky = MockProvider(failure_rate=1.0, fail_status=503)
+    backup = MockProvider(reply="from backup")
+    app = create_app()
+    model_router = ModelRouter(
+        {
+            "fast": [
+                Target(provider="flaky", model="flaky-model"),
+                Target(provider="backup", model="backup-model"),
+            ]
+        },
+        {"flaky": flaky, "backup": backup},
+        sleep=lambda _: asyncio.sleep(0),
+    )
+    app.dependency_overrides[get_model_router] = lambda: model_router
+    client = openai.AsyncOpenAI(
+        api_key="unused-until-phase-4",
+        base_url="http://gateway.test/v1",
+        http_client=httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app)),
+        max_retries=0,
+    )
+
+    raw = await client.chat.completions.with_raw_response.create(
+        model="fast", messages=[{"role": "user", "content": "hi"}]
+    )
+    resp = raw.parse()
+
+    assert resp.choices[0].message.content == "from backup"
+    assert resp.model == "backup-model"
+    assert raw.headers["x-gateway-provider"] == "backup"
+    assert raw.headers["x-gateway-attempts"] == "3"
+    assert raw.headers["x-gateway-fallback"] == "true"
+    assert flaky.calls == 2

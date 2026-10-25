@@ -3,7 +3,7 @@
 An OpenAI-compatible proxy in front of multiple LLM providers, with fallback, per-key rate
 limits, exact and semantic caching, PII masking and a cost dashboard.
 
-Status: Phase 2 in progress (model registry with aliases; Gemini and fallback next). See [plan.md](plan.md) for the roadmap.
+Status: Phase 2 in progress (model aliases, retry and fallback done; Gemini adapter next). See [plan.md](plan.md) for the roadmap.
 
 ## Quick start
 
@@ -25,6 +25,16 @@ Try it with the official `openai` SDK (`fast` needs `GROQ_API_KEY` in `.env`):
 uv run python scripts/smoke_openai_sdk.py                # model "fast"
 uv run python scripts/smoke_openai_sdk.py --model mock   # no keys needed
 ```
+
+To watch fallback without any keys, ask for `demo-fallback`. Its first provider always fails
+with a 503 and is retried once, then the mock answers:
+
+```bash
+curl -si localhost:8000/v1/chat/completions -H 'content-type: application/json' \
+  -d '{"model": "demo-fallback", "messages": [{"role": "user", "content": "hi"}]}'
+```
+
+Look for `x-gateway-provider: mock`, `x-gateway-attempts: 3` and `x-gateway-fallback: true`.
 
 ## Layout
 
