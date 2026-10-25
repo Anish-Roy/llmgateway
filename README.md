@@ -3,10 +3,10 @@
 An OpenAI-compatible proxy in front of multiple LLM providers, with fallback, per-key rate
 limits, exact and semantic caching, PII masking and a cost dashboard.
 
-Status: Phase 9 done (Groq + Gemini behind model aliases with retry and fallback, streaming,
+Status: Phase 10 done (Groq + Gemini behind model aliases with retry and fallback, streaming,
 API keys, per-key rate limits, a request log with the cost of every call, an exact-match and
-an opt-in semantic cache, PII masking, and `model: "auto"`, which picks the cheap or the
-strong alias per request). See [plan.md](plan.md) for the roadmap.
+an opt-in semantic cache, PII masking, `model: "auto"`, which picks the cheap or the strong
+alias per request, and a cost dashboard). See [plan.md](plan.md) for the roadmap.
 
 ## Quick start
 
@@ -266,6 +266,61 @@ Known limits:
 - **Startup:** for the first seconds, until tiktoken has loaded, tokens are counted as
   characters / 4, so a prompt right at the length threshold may be routed either way.
 
+### Cost dashboard
+
+A Streamlit page over the request log: who spent what, and what the gateway saved.
+
+```bash
+uv run --env-file .env --group dashboard streamlit run dashboard/app.py   # http://localhost:8501
+```
+
+It reads `DATABASE_URL` from the environment (or `.streamlit/secrets.toml` when deployed) and
+needs only Postgres, not a running gateway. Filter by API key and by a range of UTC days, the
+end day included. The page shows:
+
+- **Six headline numbers:** spend, saved by the cache, requests, cache hit rate, fallback
+  rate and error rate.
+- **Spend per key:** per day, and a table with each key's requests, spend, savings and hits.
+- **Spent and saved per day.**
+- **Who answered:** which provider and model served the requests that called one.
+- **How requests ended:** completed, provider failed, gateway failed, client left, rejected.
+- **Latency:** p50 and p95 for misses, cache hits and a stream's first token.
+- **The `model: "auto"` split,** by alias and rule.
+
+What the numbers mean:
+
+- **Spend** is at list price, free-tier calls included.
+- **Saved by the cache** is, for each hit, what the call that first produced its answer cost.
+  Hits logged before Phase 10 didn't record it; the page says how many.
+- **Cache hit rate** is over requests that weren't rejected. Requests the cache can't serve
+  (no or a high temperature, `x-gateway-cache: off`) count as misses, so it's a floor.
+- **Error rate** counts streams cut partway (sent with a 200), and leaves out the gateway's
+  own refusals (429s, unknown models), which are listed apart.
+- **Fallback rate** is over requests that called a provider.
+
+To fill it with every kind of row, send a mixed batch through a running gateway. Questions
+from the query log and their rephrasings go through `fast` at temperature 0 (misses, then
+exact and semantic hits, all at list price, well under a cent), plus streams, `auto`
+requests, a fallback, a cut stream, a 404 and, with a tight key, a 429:
+
+```bash
+uv run python -m scripts.create_key create demo-search
+uv run python -m scripts.create_key create demo-support
+uv run python -m scripts.create_key create demo-tight --rpm 2
+uv run python -m scripts.send_traffic --key search=gw-... --key support=gw-... --tight-key gw-...
+```
+
+**Checked live** with one such run (2026-10-25): $0.0011 spent and $0.0003 saved by 11 hits,
+an 18.6% hit rate, a miss at 598 ms p50 against 3 ms for an exact hit. Every tile matched a
+SQL count of the run. That run was built to have hits, so its savings aren't a measured
+saving; Phase 11's replay gives that. Details: `docs/decisions.md`.
+
+Known limits:
+
+- **Seven key colors:** the chart gives the first seven keys that ever sent a request a fixed
+  color each. Later ones share a gray "Other keys" in the chart; the table lists every key.
+- **No alerts or budgets:** it shows spend, it doesn't stop it.
+
 ## Layout
 
 ```
@@ -280,7 +335,7 @@ app/
   config.py     settings from env / .env
   main.py       FastAPI app
 data/queries.jsonl       evaluation query log (built by scripts/build_dataset.py)
-dashboard/               Streamlit cost dashboard
+dashboard/               Streamlit cost dashboard (queries.py: its SQL; app.py: the page)
 docs/decisions.md        design decisions, one entry per phase
 ```
 

@@ -1145,3 +1145,88 @@ One entry per phase: what was chosen, and why.
 - **Left out:**
   - **v2:** a logistic regression on the embeddings, as the user decided.
   - **Escalation:** retrying a weak `fast` answer on `strong`. It's listed as a limit.
+
+## Phase 10: cost dashboard
+
+- **What a cache hit saved is logged on the hit's own row (`request_logs.saved_usd`),** not
+  worked out when the dashboard loads. A hit is billed $0, and the cost of the call that first
+  produced its answer lives on the cache entry, which expires after 24 h or is replaced. A join
+  from the log to the cache tables would lose the saving with the entry. The route already
+  hands the entry to the recorder, so filling the column took no route change.
+  - **NULL, not 0, on misses and on hits logged before the column existed.** What those old
+    hits saved is unknown, and a 0 would count them as saving nothing. The dashboard sums the
+    known savings and says how many hits it couldn't price. A hit on a free mock model saves a
+    known $0.
+  - **The CHECK allows a value only on a hit:** `saved_usd IS NULL OR (saved_usd >= 0 AND
+    cache_status <> 'miss')`. The first version left out `IS NULL OR`, so on every miss it was
+    `NULL AND false`, which is false, and Postgres refused every miss. The test suite caught it.
+- **The dashboard imports nothing from `app`.** The gateway's packages pull in torch and
+  sentence-transformers: torch alone is 739 MB installed, CPU build. The dashboard needs
+  psycopg, Streamlit and its SQL, and Phase 12 deploys it on Streamlit Community Cloud, which
+  can't afford the rest. A test runs
+  `import dashboard.queries` in a fresh interpreter and checks that neither `app` nor `torch`
+  got loaded. Streamlit is in its own `dashboard` dependency group, so the gateway doesn't
+  install it.
+- **Two files: `dashboard/queries.py` (SQL in, typed rows out) and `dashboard/app.py` (the
+  page).** The metric definitions are the part that can be wrong, so they're in plain functions
+  tested on hand-made rows in a fresh Postgres schema. The page is checked by looking at it.
+- **The metric definitions** (each one is a test):
+  - **Hit rate:** hits over requests that weren't rejected. A 429 or an unknown model never
+    reached the cache. Requests the cache can't serve (a high temperature, `x-gateway-cache:
+    off`) are logged as misses, so the rate is a floor on the rate over cacheable requests. The
+    tile's help text says so.
+  - **Error rate:** from `outcome`, not the status code. A stream cut partway is a 200 with
+    `provider_error`, and a status count would miss it. The denominator is the requests the
+    gateway let in. Rejections (429s, 404s) and clients that left are counted apart: neither
+    is the gateway failing.
+  - **Fallback rate:** over requests that called at least one provider (`attempts > 0`), so
+    cache hits and rejections don't dilute it.
+  - **Latency:** p50 and p95 of completed requests, with hits apart from misses and streams
+    apart from plain replies. A hit takes 3 ms and a miss 600 ms: one percentile over both
+    describes neither. Streams also get time to the first token, since their latency runs until
+    the stream closes.
+  - **Model mix:** only requests that called a provider. A hit names the model that first
+    answered, but called nothing.
+  - **Money:** `numeric` sums in Postgres, turned into floats only to draw them.
+- **Days are UTC, and the end day is included** (`created_at < end + 1 day`). One time zone
+  for everyone reading it, stated on the page. A request at 23:30 UTC is on the next day in
+  India: a test pins the bucket.
+- **Keys are labelled `name (key_prefix)`:** names aren't unique. Revoked keys are listed and
+  marked, since their past spend still counts.
+- **A key's color never depends on the filter.** Colors go to keys in id order, among keys
+  that have ever sent a request, from the first seven slots of a palette checked for color
+  blindness. A new key takes the next slot and never repaints an older one. Keys past the
+  seventh share a gray "Other keys" in the chart; the table lists every key by name. The cost
+  shows on the dev database, which has seven old test keys with traffic: the second demo key
+  came out gray. A fresh deployment won't hit it soon. The way out, if it matters: give slots
+  to active keys first, and revoke the old test keys.
+- **The daily charts use a band axis with one band per day in the range,** not a time axis.
+  On a time axis, a single day of data drew one bar as wide as the chart, and the stacked
+  per-key bars didn't draw at all. Days with no traffic now show as empty bands.
+- **Query results are cached for 60 s** (`st.cache_data`), with a Refresh button. Each
+  refresh opens a new connection: the page is read by a few people at a time, so a pool isn't
+  worth it.
+- **`scripts/send_traffic.py` makes real rows, not inserted fake ones.** Rows written by hand
+  would test the dashboard against what we think the gateway logs; rows from real requests
+  test it against what it does.
+  - **Real money:** two team keys ask questions from `data/queries.jsonl` and then their
+    rephrasings, through the real `fast` alias at temperature 0, so every miss costs its list
+    price and every hit saves it.
+  - **Mock aliases for the failures:** fallback, a stream cut partway, and an unknown model.
+    A 2-RPM key shows the 429s.
+- **The "done when" check, live (2026-10-25):** one run of `send_traffic.py` against the dev
+  gateway and Postgres, then the dashboard filtered to the two team keys.
+  - **The run:** 60 requests: 49 misses, 7 exact hits (the same question from the other
+    key), 4 semantic hits (4 of 20 rephrasings, about what 0.95 gives), 4 streamed misses, 4
+    `auto` requests, 3 fallbacks, 1 stream cut partway and 1 unknown model. The tight key's 3
+    requests (2 served, 1 refused with a 429) were on a third key.
+  - **The headline:** $0.0010925 spent, and $0.0002709 saved by the cache. That's 19.9% of
+    what these requests would have cost without it. It's one small run built to have hits,
+    not a measured saving: Phase 11's replay gives that number.
+  - **The rates:** an 18.6% hit rate (11 of 59), a 6.2% fallback rate (3 of 48 provider
+    calls) and a 1.7% error rate (1 of 59).
+  - **Latency:** a miss took 598 ms at p50 and 730 ms at p95, all on Groq gpt-oss-20b. An
+    exact hit took 3 ms, a semantic hit 29 ms (embedding included), and a stream's first
+    token came after 517 ms.
+  - **Checked:** every tile matched the run's own count and a SQL query. Picking keys kept
+    each key's color. Light and dark themes both drew.
