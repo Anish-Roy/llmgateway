@@ -144,7 +144,7 @@ async def test_a_repeated_request_is_served_from_the_cache():
     assert b["id"].startswith("chatcmpl-")
 
 
-async def test_a_hit_is_logged_as_exact_at_no_cost():
+async def test_a_hit_is_logged_as_exact_at_no_cost_and_saves_the_first_call():
     gw = Gateway()
 
     await gw.post(chat())
@@ -154,8 +154,11 @@ async def test_a_hit_is_logged_as_exact_at_no_cost():
     assert (miss.cache_status, miss.attempts) == ("miss", 1)
     # 3 x $1.5/1M + 5 x $4/1M
     assert miss.cost_usd == Decimal("0.0000245")
+    assert miss.saved_usd is None
     assert (hit.cache_status, hit.status_code, hit.outcome) == ("exact", 200, "completed")
     assert (hit.prompt_tokens, hit.completion_tokens, hit.cost_usd) == (0, 0, Decimal(0))
+    # What the call that first produced the answer cost.
+    assert hit.saved_usd == Decimal("0.0000245")
     assert (hit.attempts, hit.fallback, hit.stream) == (0, False, False)
     # Who first answered, for the dashboard.
     assert (hit.provider, hit.model, hit.requested_model) == ("groq", "m", "fast")
@@ -422,6 +425,7 @@ async def test_a_stream_hit_is_logged_as_exact():
         "completed",
     )
     assert (hit.prompt_tokens, hit.completion_tokens, hit.cost_usd) == (0, 0, Decimal(0))
+    assert hit.saved_usd == Decimal("0.0000245")
     assert hit.attempts == 0
 
 

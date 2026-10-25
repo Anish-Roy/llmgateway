@@ -104,7 +104,8 @@ class Recording:
 
     def cached(self, entry: CacheEntry, cache_status: CacheStatus = "exact") -> None:
         """An answer served from the exact or the semantic cache: no provider was called, so
-        nothing was billed. The row names who first answered, for the dashboard."""
+        nothing was billed. The row names who first answered, and what that call cost, which
+        is what this hit saved, for the dashboard."""
         self._submit(
             lambda: self._entry(
                 status_code=200,
@@ -113,6 +114,7 @@ class Recording:
                 usage=Usage(),
                 attempts=0,
                 cache_status=cache_status,
+                saved_usd=entry.cost_usd,
             )
         )
 
@@ -148,6 +150,7 @@ class Recording:
         fallback: bool = False,
         ttft_ms: int | None = None,
         cache_status: CacheStatus = "miss",
+        saved_usd: Decimal | None = None,
     ) -> RequestLog:
         return RequestLog(
             key_id=self._key_id,
@@ -176,6 +179,7 @@ class Recording:
             pii_types=self._pii_types,
             routed_alias=self._decision.alias if self._decision else None,
             route_reason=self._decision.reason if self._decision else None,
+            saved_usd=saved_usd,
         )
 
     def _submit(self, build: Callable[[], RequestLog]) -> None:

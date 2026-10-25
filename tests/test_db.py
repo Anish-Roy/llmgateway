@@ -129,10 +129,21 @@ def test_request_log_defaults(pg_conninfo):
 
         row = conn.execute(
             "SELECT provider, model, prompt_tokens, completion_tokens, usage_estimated,"
-            " ttft_ms, cost_usd, cache_status, attempts, fallback FROM request_logs"
+            " ttft_ms, cost_usd, cache_status, attempts, fallback, saved_usd FROM request_logs"
         ).fetchone()
 
-    assert row == (None, None, 0, 0, False, None, Decimal(0), "miss", 0, False)
+    assert row == (None, None, 0, 0, False, None, Decimal(0), "miss", 0, False, None)
+
+
+def test_a_hit_keeps_what_it_saved(pg_conninfo):
+    with psycopg.connect(pg_conninfo) as conn:
+        apply_migrations(conn)
+        _insert_key(conn)
+        _insert_log(conn, cache_status="semantic", saved_usd=Decimal("0.0000245"))
+
+        saved = conn.execute("SELECT saved_usd FROM request_logs").fetchone()[0]
+
+    assert saved == Decimal("0.0000245")
 
 
 def test_request_log_cost_is_exact(pg_conninfo):
@@ -157,6 +168,9 @@ def test_request_log_cost_is_exact(pg_conninfo):
         {"prompt_tokens": -1},
         {"latency_ms": -5},
         {"cost_usd": Decimal("-0.01")},
+        {"cache_status": "exact", "saved_usd": Decimal("-0.01")},
+        # A miss called a provider: there was nothing to save.
+        {"saved_usd": Decimal("0.01")},
         # A provider without a model (or the other way round) is half a row.
         {"provider": "groq"},
         {"model": "openai/gpt-oss-20b"},

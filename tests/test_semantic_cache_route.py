@@ -5,6 +5,7 @@ embedder that puts QUESTION and REPHRASED at similarity 0.97 (above the 0.95 thr
 """
 
 import json
+from decimal import Decimal
 
 import numpy as np
 import psycopg
@@ -87,16 +88,17 @@ async def test_a_similar_question_gets_the_stored_answer():
     assert second.headers["x-gateway-attempts"] == "0"
 
 
-async def test_a_semantic_hit_is_logged_as_semantic_at_no_cost():
+async def test_a_semantic_hit_is_logged_as_semantic_at_no_cost_and_saves_the_first_call():
     gw = SemanticGateway()
 
     await gw.post(ask(QUESTION), headers=OPT_IN)
     await gw.post(ask(REPHRASED), headers=OPT_IN)
     miss, hit = await gw.rows()
 
-    assert miss.cache_status == "miss"
+    assert (miss.cache_status, miss.saved_usd) == ("miss", None)
     assert (hit.cache_status, hit.status_code, hit.outcome) == ("semantic", 200, "completed")
     assert (hit.prompt_tokens, hit.completion_tokens, hit.cost_usd, hit.attempts) == (0, 0, 0, 0)
+    assert hit.saved_usd == miss.cost_usd > 0
     assert (hit.provider, hit.model, hit.requested_model) == ("groq", "m", "fast")
 
 
@@ -396,9 +398,14 @@ def test_semantic_hits_come_from_postgres_on_the_real_startup(pg_conninfo, monke
     with psycopg.connect(pg_conninfo) as conn:
         entries = conn.execute("SELECT key_id, prompt FROM semantic_cache ORDER BY key_id")
         rows = conn.execute(
-            "SELECT key_id, cache_status, attempts FROM request_logs ORDER BY id"
+            "SELECT key_id, cache_status, attempts, saved_usd FROM request_logs ORDER BY id"
         ).fetchall()
         entries = entries.fetchall()
     # Bob's miss is stored under Bob.
     assert entries == [(record.id, QUESTION), (record.id + 1, REPHRASED)]
-    assert rows == [(record.id, "miss", 1), (record.id, "semantic", 0), (record.id + 1, "miss", 1)]
+    # The mock model is free: the hit saved $0, which is known, unlike a miss's NULL.
+    assert rows == [
+        (record.id, "miss", 1, None),
+        (record.id, "semantic", 0, Decimal(0)),
+        (record.id + 1, "miss", 1, None),
+    ]
