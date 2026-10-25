@@ -1,0 +1,32 @@
+# Simulated provider failures for scripts/check_fallback.py. Mock providers only: no keys, no
+# cost. Start a gateway on it with MODELS_FILE=config/outage.yaml (see the script).
+#
+# Each mock fails a share of calls with a 503 before the first token, plain or streamed. The
+# gateway retries a 503 once on the same provider, then falls back to the next entry.
+
+providers:
+  # A provider that's down.
+  down:
+    type: mock
+    failure_rate: 1.0
+  # A provider failing half its calls.
+  flaky:
+    type: mock
+    failure_rate: 0.5
+  # The fallback: mostly up, but not perfect either.
+  backup:
+    type: mock
+    failure_rate: 0.1
+
+# Each scenario twice: the failing provider alone, and with the backup behind it.
+aliases:
+  down-alone:
+    - down/mock-model
+  down-with-fallback:
+    - down/mock-model
+    - backup/mock-model
+  flaky-alone:
+    - flaky/mock-model
+  flaky-with-fallback:
+    - flaky/mock-model
+    - backup/mock-model

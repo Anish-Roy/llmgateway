@@ -1325,3 +1325,22 @@ One entry per phase: what was chosen, and why.
   log is planted near-duplicates, and its easy prompts are short: on real traffic, both the
   hit rate and the router's cheap share could be higher or lower. Quality isn't in it: the
   router's cheap answers were spot-checked in Phase 9, not here.
+- **Fallback success rate, measured (2026-10-26, `scripts/check_fallback.py`).** For the
+  resume's "requests keep succeeding during outages", a number from simulated failures, not
+  from waiting for a real outage.
+  - **Mock providers that fail on purpose (`config/outage.yaml`):** `down` fails every call,
+    `flaky` half of them, and `backup` 10%. Each failure is a 503 before the first token. Each
+    failing provider is an alias alone and an alias with `backup` behind it, so the only
+    difference between the two is fallback. The backup fails too, because a perfect backup
+    would make the number meaningless.
+  - **1,000 requests per alias, half streamed, caches off,** each with a different prompt. A
+    stream counts as a success only if it ends with `data: [DONE]`. A key with high limits is
+    created for the run and revoked at the end.
+  - **Results:** a down provider alone served 0%, and 99.3% with fallback. A flaky one alone
+    served 75.9%, and 99.8% with fallback. The expected rates are 99%, 75% and 99.75%: the
+    gateway retries a 503 once on the same provider before moving on, so a request fails only
+    if every try fails. Streamed and plain requests came out the same (497 and 496 of 500 for
+    the down provider with fallback), and `request_logs` matched the client's counts.
+  - **What it doesn't cover:** failures after the first streamed token (fallback can't help
+    there, by design), and timeouts and 429s, which move on without the same-provider retry.
+    The mocks fail at random, unseeded, so a rerun gives slightly different numbers.

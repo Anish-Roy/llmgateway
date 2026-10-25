@@ -83,6 +83,29 @@ curl -si localhost:8000/v1/chat/completions -H "Authorization: Bearer $GATEWAY_A
 
 Look for `x-gateway-provider: mock`, `x-gateway-attempts: 3` and `x-gateway-fallback: true`.
 
+**How much fallback keeps working, measured.** `scripts/check_fallback.py` sends 1,000
+requests (half streamed, caches off) to each alias in [config/outage.yaml](config/outage.yaml):
+mock providers that fail a set share of calls with a 503 before the first token. Each failing
+provider is tried alone, and with a backup (itself failing 10% of calls) behind it. Free, no
+provider keys:
+
+```bash
+MODELS_FILE=config/outage.yaml SEMANTIC_CACHE_ENABLED=false uv run uvicorn app.main:app --port 8002
+uv run python -m scripts.check_fallback --base-url http://localhost:8002/v1
+```
+
+Results from 2026-10-26:
+
+| Primary provider | Alone | With fallback | Expected with fallback |
+|---|--:|--:|--:|
+| down (fails every call) | 0.0% | 99.3% | 99% (the backup fails twice: 0.1²) |
+| flaky (fails half its calls) | 75.9% | 99.8% | 99.75% (0.5² × 0.1²) |
+
+A 503 is retried once on the same provider, which is why the flaky provider alone still serves
+about 75% (1 − 0.5²). Streamed and plain requests did the same: a stream counts only if it
+ended with `data: [DONE]`. These mocks fail before the first token, where fallback is still
+possible; a failure partway through a stream can't fall back (see Streaming).
+
 ### Streaming
 
 `stream=True` returns server-sent events in OpenAI's chunk format, ending with `data: [DONE]`.
