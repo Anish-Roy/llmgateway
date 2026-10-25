@@ -289,3 +289,28 @@ One entry per phase: what was chosen, and why.
   - A client that disconnected 0.5 s into a long `strong` answer was logged as
     `client_disconnect`, which shows the upstream close runs on a real server.
 
+
+## Phase 4: API keys and rate limits
+
+- **psycopg 3 (async) with `psycopg_pool`, not asyncpg.** The same driver works async in the
+  gateway and sync in `scripts/` and the Phase 10 Streamlit dashboard, and pgvector supports it
+  for Phase 7. asyncpg is async-only, so the scripts would need a second driver.
+- **One pool, opened in the lifespan next to the httpx client.** Startup waits up to 10 s for a
+  first connection, so a stopped Postgres or a wrong `DATABASE_URL` stops the app right away,
+  like a bad registry file, instead of failing the first request. The gateway now needs
+  Postgres to start.
+- **The pool checks each connection before handing it out.** Hosted Postgres (Neon, Supabase)
+  closes idle connections; without the check, the first request after a quiet spell would get
+  a dead one. It costs one round trip per checkout, and the auth cache (step 3) keeps checkouts
+  rare.
+- **Tables come from SQL files run by `scripts/migrate.py`, not from `docker/postgres/init.sql`.**
+  The init file runs only when the volume is first created, so an existing dev database and a
+  hosted one would never get the table. No migration tool either: every file is idempotent
+  (`CREATE TABLE IF NOT EXISTS`) and all of them run in name order, in one transaction, every
+  time. An advisory lock makes two runs at once take turns. Enough for a handful of tables.
+- **The database enforces what it can:** the key hash is unique and must be 64 lowercase hex
+  characters (one key, one spelling), and limits must be positive. A bad row from the CLI fails
+  at insert, not at the first request.
+- **Postgres tests run in a throwaway schema** (`search_path` set on the connection) and skip
+  when Postgres isn't reachable. Tests that start the app get no pool, the same way they skip
+  the tiktoken download, so the rest of the suite needs no database.

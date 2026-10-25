@@ -9,6 +9,7 @@ from app import __version__
 from app.api.errors import install_error_handlers
 from app.api.routes import router
 from app.config import Settings, get_settings
+from app.db.pool import open_pool
 from app.providers.base import Provider
 from app.providers.gemini import GeminiProvider
 from app.providers.groq import GroqProvider
@@ -70,8 +71,13 @@ def create_app() -> FastAPI:
         config = load_registry(settings.models_file)
         # For estimating usage when a stream ends early. Never blocks startup.
         load_encoding_in_background()
-        # One pooled HTTP client for all provider calls, closed on shutdown.
-        async with httpx.AsyncClient(timeout=settings.request_timeout_s) as client:
+        # One pooled HTTP client for all provider calls, and one Postgres pool (API keys now,
+        # request logs and the caches later). Both closed on shutdown.
+        async with (
+            httpx.AsyncClient(timeout=settings.request_timeout_s) as client,
+            open_pool(settings.database_url) as db_pool,
+        ):
+            app.state.db_pool = db_pool
             providers = build_providers(config, settings, client)
             app.state.model_router = ModelRouter(
                 config.aliases, providers, deadline_s=settings.request_deadline_s

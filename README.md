@@ -12,6 +12,7 @@ Status: Phase 2 done (Groq + Gemini behind model aliases, with retry and fallbac
 uv sync                                   # create .venv and install deps
 cp .env.example .env                      # then add your provider keys
 docker compose up -d                      # Postgres 17 + pgvector on localhost:5433
+uv run python -m scripts.migrate          # create/update tables (safe to rerun)
 uv run uvicorn app.main:app --reload      # http://localhost:8000/health
 uv run pytest
 uv run ruff check .

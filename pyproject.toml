@@ -12,6 +12,8 @@ dependencies = [
     "pydantic-settings>=2.6",
     "pyyaml>=6.0.3",
     "tiktoken>=0.14.0",
+    "psycopg[binary]>=3.3.6",
+    "psycopg-pool>=3.3.3",
 ]
 
 [dependency-groups]
