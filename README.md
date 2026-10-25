@@ -196,8 +196,9 @@ entry, and each gets its own values back.
 streamed): every placeholder a model wrote came back exactly as sent, so restoring by exact
 match works. Gemini 3.5 Flash-Lite returned all 22 values. Groq's gpt-oss-20b returned only
 13 to 18 of 22: it treats a placeholder as a blank to fill or as private data, and refuses
-or makes up a stand-in. A one-line system note explaining the placeholders brought every
-model to 22 of 22 (details: `docs/decisions.md`).
+or makes up a stand-in. In the experiment, a one-line system note explaining the
+placeholders, sent by the client, brought every model to 22 of 22. The gateway doesn't add
+that note itself (details: `docs/decisions.md`).
 
 Known limits:
 
@@ -211,7 +212,7 @@ Known limits:
   request's first email.
 - **One spelling restored:** a value written two ways comes back in the spelling first seen.
 - **Dropped placeholders:** a model that drops a placeholder drops the value with it, as
-  gpt-oss does without the note.
+  gpt-oss does unless the client sends the note.
 
 ## Layout
 
