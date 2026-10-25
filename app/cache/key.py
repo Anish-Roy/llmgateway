@@ -32,12 +32,22 @@ _NOT_IN_KEY = {"stream", "stream_options", "user"}
 _KEY_VERSION = "v1"
 
 
-def cache_key(request: ChatRequest) -> bytes:
-    """32 bytes, the same for any two requests the model would see as identical."""
+def model_fields(request: ChatRequest) -> dict:
+    """Every field of `request` the model sees, as plain JSON values. The semantic cache's
+    context hash starts from the same fields, so the two caches agree on what matters."""
     # exclude_none: a field sent as null means the same as one left out. `temperature` is a
     # float field, so 0 and 0.0 dump the same.
-    fields = request.model_dump(mode="json", exclude_none=True, exclude=_NOT_IN_KEY)
-    canonical = json.dumps(fields, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return request.model_dump(mode="json", exclude_none=True, exclude=_NOT_IN_KEY)
+
+
+def canonical_json(fields: dict) -> str:
+    """One spelling for equal values: keys sorted, no spaces."""
+    return json.dumps(fields, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def cache_key(request: ChatRequest) -> bytes:
+    """32 bytes, the same for any two requests the model would see as identical."""
+    canonical = canonical_json(model_fields(request))
     return hashlib.sha256(f"{_KEY_VERSION}:{canonical}".encode()).digest()
 
 

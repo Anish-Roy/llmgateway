@@ -13,6 +13,7 @@ from app.auth.authenticator import Authenticator
 from app.auth.keys import PostgresKeyStore
 from app.auth.rate_limit import RateLimiter
 from app.cache.embedder import Embedder, load_embedder
+from app.cache.semantic_store import NoSemanticStore, PostgresSemanticStore, SemanticCache
 from app.cache.store import NoCacheStore, PostgresCacheStore, ResponseCache
 from app.config import Settings, get_settings
 from app.db.pool import open_pool
@@ -125,6 +126,17 @@ def create_app() -> FastAPI:
             # Lookups skip expired entries anyway; this only frees the space.
             await cache.delete_expired()
             app.state.response_cache = cache
+            # Requests skip it, without an embedder (the semantic cache is off, or the model
+            # didn't load).
+            semantic_cache = SemanticCache(
+                PostgresSemanticStore(db_pool),
+                app.state.embedder,
+                ttl_s=settings.cache_ttl_s,
+                threshold=settings.semantic_cache_threshold,
+                max_temperature=settings.cache_max_temperature,
+            )
+            await semantic_cache.delete_expired()
+            app.state.semantic_cache = semantic_cache
             try:
                 yield
             finally:
@@ -132,6 +144,8 @@ def create_app() -> FastAPI:
                 # closes.
                 await log_writer.drain()
                 await cache.drain()
+                await semantic_cache.drain()
+                semantic_cache.close()
 
     app = FastAPI(title="LLM Gateway", version=__version__, lifespan=lifespan)
     # In memory and nothing to open or close, so it's built here rather than in the lifespan.
@@ -144,8 +158,9 @@ def create_app() -> FastAPI:
     # Replaced at startup by the Postgres cache. Until then nothing is cached, so tests that
     # repeat a request keep calling the provider unless they give the app a cache themselves.
     app.state.response_cache = ResponseCache(NoCacheStore(), ttl_s=settings.cache_ttl_s)
-    # Loaded at startup, if the semantic cache is on.
+    # Loaded at startup, if the semantic cache is on. Until then no request is embedded.
     app.state.embedder = None
+    app.state.semantic_cache = SemanticCache(NoSemanticStore(), None, ttl_s=settings.cache_ttl_s)
     install_error_handlers(app)
     app.include_router(router)
 

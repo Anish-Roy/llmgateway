@@ -784,3 +784,32 @@ One entry per phase: what was chosen, and why.
   the HNSW plan finds 0 rows; with `hnsw.iterative_scan = relaxed_order` (pgvector 0.8, here
   0.8.7) it keeps searching and finds the right one. Step 4's lookup sets that. On a small
   table the planner skips HNSW for the btree index and an exact scan, which is right too.
+- **The semantic cache mirrors the exact one's shape** (`app/cache/semantic_store.py`): a
+  Postgres store, an in-memory store for tests, a `NoSemanticStore` that conftest swaps in so
+  no existing test starts hitting, and a `SemanticCache` front whose lookups never raise and
+  whose stores run in tasks drained at shutdown. A lookup returns the same `CacheEntry` the
+  exact cache does, so step 5 serves and replays a semantic hit with the code it already has.
+- **The store returns the nearest entry however far; the front decides.** The threshold and
+  the numbers guard live in one place (`SemanticCache.get`), the same for both stores, and
+  the store reports the similarity, so a test can check the arithmetic.
+- **The context hash shares the exact key's idea of "what the model sees"**
+  (`model_fields` in key.py, used by both). It's that, minus the user message's text, under
+  its own version prefix. The user message's role and extra keys (`name`) still count.
+- **A request is embedded at most once.** The lookup keeps its vector in the
+  `SemanticLookup`, and the store after a miss reuses it. If the lookup timed out before the
+  vector was ready, the store embeds in the background, off the request's path.
+- **Embedding runs on one thread of its own** (a one-worker `ThreadPoolExecutor`). Each
+  embedding is about 12 ms of CPU that torch already spreads across cores, so several at once
+  only fight over them. A queue of one keeps that predictable and leaves the event loop's
+  shared thread pool free. Not done: capping torch's own threads
+  (`torch.set_num_threads`). In a container, torch may see the host's cores rather than the
+  container's share, and that's for Phase 12 to check on the real box.
+- **Vectors go to Postgres as pgvector's text form, cast with `::vector`.** No type adapter
+  to register on the pool, which would have to run after migration 004 creates the type.
+- **Each lookup sets `hnsw.iterative_scan` with `SET LOCAL`,** for that transaction only, so
+  pooled connections don't carry it to other queries.
+- **Checked against the real model and Postgres:** replaying the 378 prompts through
+  `SemanticCache` (one key, one context) gave 27 hits, the same 27 the experiment counts at
+  0.95 with the guard, so the gateway serves what was measured. Lookups, embedding plus query,
+  took 24 ms p50, 34 ms p95 and 45 ms at most, well inside the 0.5 s lookup timeout. A
+  request that opts in and misses pays that on top of the provider call.
