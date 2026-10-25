@@ -18,6 +18,7 @@ from app.auth.rate_limit import RateLimitExceeded
 from app.cache.store import CacheEntry
 from app.guardrails.pii import PiiType
 from app.providers.base import ProviderError
+from app.routing.auto import Decision
 from app.routing.registry import Price, Target
 from app.routing.router import ModelNotFoundError, Routed, RoutedStream
 from app.usage.cost import cost
@@ -55,11 +56,16 @@ class Recording:
         self._started = time.monotonic()
         self._done = False
         self._pii_types: list[PiiType] = []
+        self._decision: Decision | None = None
 
     def masked(self, types: tuple[PiiType, ...]) -> None:
         """The kinds of PII masked in the request. Called as soon as it's masked, so a request
         that then fails still says what it held."""
         self._pii_types = list(types)
+
+    def routed(self, decision: Decision | None) -> None:
+        """The alias `model: "auto"` picked, and why. None for any other request."""
+        self._decision = decision
 
     def replied(self, routed: Routed, usage: Usage, usage_estimated: bool) -> None:
         """A non-streamed reply. `usage` is the provider's, or an estimate if it sent none."""
@@ -168,6 +174,8 @@ class Recording:
             fallback=fallback,
             cache_status=cache_status,
             pii_types=self._pii_types,
+            routed_alias=self._decision.alias if self._decision else None,
+            route_reason=self._decision.reason if self._decision else None,
         )
 
     def _submit(self, build: Callable[[], RequestLog]) -> None:

@@ -180,3 +180,17 @@ async def test_postgres_log_refuses_an_unknown_pii_type(pg_conninfo, key_id):
     # The column holds kinds, never values: anything else is a bug, and the row is refused.
     with pytest.raises(psycopg.errors.CheckViolation):
         await _write_and_read_back(pg_conninfo, _entry(key_id=key_id, pii_types=["a@b.com"]))
+
+
+async def test_postgres_log_writes_the_route(pg_conninfo, key_id):
+    entry = _entry(key_id=key_id, routed_alias="strong", route_reason="keyword:step by step")
+
+    assert await _write_and_read_back(pg_conninfo, entry) == dataclasses.astuple(entry)
+
+
+async def test_postgres_log_refuses_a_reason_that_isnt_a_rule(pg_conninfo, key_id):
+    # A reason is a rule's name, never text from the request: anything else is a bug.
+    with pytest.raises(psycopg.errors.CheckViolation):
+        await _write_and_read_back(
+            pg_conninfo, _entry(key_id=key_id, routed_alias="fast", route_reason="Mail a@b.com")
+        )

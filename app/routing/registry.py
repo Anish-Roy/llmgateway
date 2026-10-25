@@ -81,6 +81,31 @@ class Price(BaseModel):
 
 FREE = Price(input=Decimal(0), output=Decimal(0))
 
+# The model name that asks the gateway to pick an alias (app/routing/auto.py).
+AUTO = "auto"
+
+
+class AutoSpec(BaseModel):
+    """How `model: "auto"` picks between a cheap alias and a strong one. A request goes to
+    `strong` if any rule below matches, and to `cheap` otherwise."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cheap: str
+    strong: str
+    # The client wants a long answer: max_tokens at least this.
+    long_answer_max_tokens: int = Field(gt=0)
+    # A conversation with at least this many user messages.
+    long_conversation_turns: int = Field(gt=1)
+    # The last user message has at least this many non-empty lines: pasted code, a log, a
+    # passage to summarise. A ``` fence counts whatever its length.
+    pasted_lines: int = Field(gt=1)
+    # The last user message is at least this many tokens.
+    long_prompt_tokens: int = Field(gt=0)
+    # Words or phrases in the last user message that ask for work: "implement", "prove",
+    # "step by step". Whole words, any case; spaces match any run of whitespace.
+    keywords: list[str] = []
+
 
 class RegistryConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -89,6 +114,18 @@ class RegistryConfig(BaseModel):
     aliases: dict[str, Annotated[list[TargetRef], Field(min_length=1)]]
     # "provider/model" -> price, keyed like alias targets. Mock targets may leave theirs out.
     pricing: dict[str, Price] = {}
+    # Without it, "auto" is an unknown model.
+    auto: AutoSpec | None = None
+
+    @model_validator(mode="after")
+    def _auto_picks_between_real_aliases(self) -> "RegistryConfig":
+        if AUTO in self.aliases:
+            raise ValueError(f"{AUTO!r} is the router's name and can't be an alias")
+        if self.auto is not None:
+            for alias in (self.auto.cheap, self.auto.strong):
+                if alias not in self.aliases:
+                    raise ValueError(f"auto uses undefined alias {alias!r}")
+        return self
 
     @model_validator(mode="after")
     def _targets_name_known_providers(self) -> "RegistryConfig":

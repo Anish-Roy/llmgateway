@@ -8,7 +8,8 @@ from typing import Literal
 
 from app.api.schemas import ChatChunk, ChatRequest, ChatResponse, Usage
 from app.providers.base import Provider, ProviderError
-from app.routing.registry import Target
+from app.routing.auto import AutoRouter, Decision
+from app.routing.registry import AUTO, Target
 from app.usage.tokens import estimate_usage
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ class ModelRouter:
         retries: int = 1,
         backoff_s: float = 0.25,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        auto: AutoRouter | None = None,
     ) -> None:
         self._aliases = aliases
         # Only providers that could be built (e.g. had an API key). Targets on others are skipped.
@@ -64,14 +66,31 @@ class ModelRouter:
         self._backoff_s = backoff_s
         # Injectable so tests don't actually wait.
         self._sleep = sleep
+        # Picks an alias for `model: "auto"`. None: "auto" is an unknown model.
+        self._auto = auto
 
     def available_aliases(self) -> list[str]:
-        """Aliases with at least one configured provider, for GET /v1/models."""
-        return [
+        """Aliases with at least one configured provider, for GET /v1/models. "auto" too, if
+        both aliases it picks from have one."""
+        available = [
             alias
             for alias, targets in self._aliases.items()
             if any(t.provider in self._providers for t in targets)
         ]
+        if self._auto is not None and {self._auto.spec.cheap, self._auto.spec.strong} <= set(
+            available
+        ):
+            available.append(AUTO)
+        return available
+
+    def resolve(self, request: ChatRequest) -> tuple[ChatRequest, Decision | None]:
+        """For `model: "auto"`, the request with the alias the auto router picked, and why.
+        Any other request comes back as it is, with no decision."""
+        if request.model != AUTO or self._auto is None:
+            return request, None
+        decision = self._auto.decide(request)
+        logger.info("auto -> %s (%s)", decision.alias, decision.reason)
+        return request.model_copy(update={"model": decision.alias}), decision
 
     def targets(self, alias: str) -> list[Target]:
         if alias not in self._aliases:

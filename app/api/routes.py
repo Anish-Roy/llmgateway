@@ -23,6 +23,7 @@ from app.cache.semantic import SEMANTIC
 from app.cache.semantic_store import SemanticCache, SemanticLookup
 from app.cache.store import CacheEntry, ResponseCache
 from app.guardrails.pii import explain_placeholders, mask_request, restore_response
+from app.routing.auto import ROUTE_HEADER, ROUTE_REASON_HEADER, Decision
 from app.routing.registry import Target
 from app.routing.router import ModelRouter, RoutedStream
 from app.usage.recorder import Recording, UsageRecorder
@@ -86,9 +87,15 @@ async def chat_completions(
     # placeholders are, or some models drop them.
     masked = mask_request(body)
     body, values = masked.request, masked.values
+    recording.masked(masked.types)
+    # `model: "auto"` becomes the alias it picks, so the caches and the providers see a real
+    # alias from here on (the log keeps "auto" as the model asked for). It reads the request
+    # as the provider will, masked, but before the placeholder note, which isn't the client's.
+    body, decision = model_router.resolve(body)
+    recording.routed(decision)
+    route_headers = _route_headers(decision)
     if values:
         body = explain_placeholders(body)
-    recording.masked(masked.types)
 
     # Both kinds of request share entries: the key leaves `stream` out. None when the request
     # isn't cacheable or the client turned the cache off.
@@ -116,7 +123,7 @@ async def chat_completions(
         # No provider call: the reserved tokens go back (the request still counts).
         reservation.settle(0)
         recording.cached(entry, hit_status)
-        headers = {**_cache_hit_headers(entry, hit_status), **limit_headers}
+        headers = {**_cache_hit_headers(entry, hit_status), **route_headers, **limit_headers}
         if body.stream:
             return sse_replay(
                 entry.response, include_usage=_wants_usage(body), headers=headers, values=values
@@ -144,7 +151,7 @@ async def chat_completions(
         return sse_response(
             stream,
             include_usage=_wants_usage(body),
-            headers={**headers, **limit_headers, CACHE_HEADER: cache_status},
+            headers={**headers, **route_headers, **limit_headers, CACHE_HEADER: cache_status},
             values=values,
             on_finish=lambda _: _stream_finished(stream, reservation, recording, keep),
         )
@@ -165,6 +172,7 @@ async def chat_completions(
     recording.replied(routed, usage, estimated)
     keep(routed.response, routed.target, usage)
     response.headers.update(_gateway_headers(routed.target, routed.attempts, routed.fallback))
+    response.headers.update(route_headers)
     response.headers.update(limit_headers)
     response.headers[CACHE_HEADER] = cache_status
     return restore_response(routed.response, values)
@@ -255,6 +263,13 @@ def _gateway_headers(target: Target, attempts: int, fallback: bool) -> dict[str,
         "x-gateway-attempts": str(attempts),
         "x-gateway-fallback": "true" if fallback else "false",
     }
+
+
+def _route_headers(decision: Decision | None) -> dict[str, str]:
+    """On `model: "auto"` requests: the alias picked, and the rule that picked it."""
+    if decision is None:
+        return {}
+    return {ROUTE_HEADER: decision.alias, ROUTE_REASON_HEADER: decision.reason}
 
 
 def _wants_usage(body: ChatRequest) -> bool:

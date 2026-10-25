@@ -54,6 +54,10 @@ class RequestLog:
     # The kinds of PII masked in the request, sorted; never the values. A list, which psycopg
     # sends as a Postgres array.
     pii_types: list[PiiType] = field(default_factory=list)
+    # On `model: "auto"` requests: the alias it picked, and the rule that picked it. None on
+    # every other request, and on an auto request refused before it was routed (a 429).
+    routed_alias: str | None = None
+    route_reason: str | None = None
 
 
 _COLUMNS = [f.name for f in dataclasses.fields(RequestLog)]

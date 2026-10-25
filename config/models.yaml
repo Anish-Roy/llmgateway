@@ -60,6 +60,49 @@ aliases:
     - midstream/mock-model
     - mock/mock-model
 
+# model: "auto" sends each request to `cheap` or `strong` (app/routing/auto.py). The first rule
+# that matches picks `strong`, in this order; a request no rule matches goes to `cheap`. All but
+# the first two read only the last user message. The x-gateway-route header and request_logs
+# say which alias was picked and why. Measured with `uv run python -m scripts.eval_router`:
+# see docs/decisions.md.
+auto:
+  cheap: fast
+  strong: strong
+  long_answer_max_tokens: 2048
+  long_conversation_turns: 5
+  # A ``` fence counts whatever its length.
+  pasted_lines: 3
+  long_prompt_tokens: 20
+  keywords:
+    - implement
+    - write
+    - draft
+    - rewrite
+    - design
+    - prove
+    - derive
+    - step by step
+    - explain
+    - in detail
+    - analyze
+    - analyse
+    - compare
+    - trade-offs
+    - pros and cons
+    - justify
+    - argue
+    - debug
+    - fix
+    - refactor
+    - optimize
+    - solve
+    - calculate
+    - estimate
+    - probability
+    - summarize
+    - summarise
+    - translate the following
+
 # List price in USD per 1M tokens, for every provider/model an alias uses (the gateway won't
 # start if one is missing). Mock targets are free unless listed. Free-tier calls are logged at
 # list price too, so the costs mean something. Output includes reasoning and thinking tokens.

@@ -21,6 +21,7 @@ from app.providers.base import Provider
 from app.providers.gemini import GeminiProvider
 from app.providers.groq import GroqProvider
 from app.providers.mock import MockProvider
+from app.routing.auto import AutoRouter
 from app.routing.registry import (
     FREE,
     GeminiSpec,
@@ -114,7 +115,10 @@ def create_app() -> FastAPI:
             )
             providers = build_providers(config, settings, client)
             app.state.model_router = ModelRouter(
-                config.aliases, providers, deadline_s=settings.request_deadline_s
+                config.aliases,
+                providers,
+                deadline_s=settings.request_deadline_s,
+                auto=AutoRouter(config.auto) if config.auto else None,
             )
             log_writer = LogWriter(PostgresUsageLog(db_pool))
             app.state.usage_recorder = UsageRecorder(log_writer, config.price)
