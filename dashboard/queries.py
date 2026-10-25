@@ -53,6 +53,8 @@ class Key:
     # Names aren't unique, so the prefix tells two "backend" keys apart.
     label: str
     active: bool
+    # Whether it has sent any request, ever: the dashboard gives each of those a fixed color.
+    logged: bool
 
 
 @dataclass(frozen=True)
@@ -149,8 +151,9 @@ def keys(conn: psycopg.Connection) -> list[Key]:
     """Every key, revoked ones too: their past spend still counts."""
     with conn.cursor(row_factory=class_row(Key)) as cur:
         return cur.execute(
-            "SELECT id, name || ' (' || key_prefix || ')' AS label, active"
-            " FROM api_keys ORDER BY name, id"
+            "SELECT id, name || ' (' || key_prefix || ')' AS label, active,"
+            " EXISTS (SELECT 1 FROM request_logs r WHERE r.key_id = k.id) AS logged"
+            " FROM api_keys k ORDER BY name, id"
         ).fetchall()
 
 

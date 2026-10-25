@@ -30,6 +30,9 @@ explicit = true
 torch = [{ index = "pytorch-cpu" }]
 
 [dependency-groups]
+dashboard = [
+    "streamlit>=1.66.1",
+]
 dev = [
     "matplotlib>=3.9",
     "openai>=3.37.0",
@@ -44,6 +47,10 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "ASYNC"]
+
+[tool.ruff.lint.isort]
+# dashboard/app.py imports its sibling as `queries`: Streamlit runs it with dashboard/ on the path.
+known-local-folder = ["queries"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

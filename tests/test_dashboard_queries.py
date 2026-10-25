@@ -72,10 +72,11 @@ def _rejected(conn: psycopg.Connection, key_id: int, **overrides) -> None:
 def test_keys_are_labelled_with_their_prefix_revoked_ones_too(conn):
     a = _key(conn, "backend", "gw-aaaa")
     b = _key(conn, "backend", "gw-bbbb", active=False)
+    _log(conn, b)
 
     assert queries.keys(conn) == [
-        queries.Key(a, "backend (gw-aaaa)", True),
-        queries.Key(b, "backend (gw-bbbb)", False),
+        queries.Key(a, "backend (gw-aaaa)", active=True, logged=False),
+        queries.Key(b, "backend (gw-bbbb)", active=False, logged=True),
     ]
 
 
