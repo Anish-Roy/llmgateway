@@ -1042,3 +1042,102 @@ One entry per phase: what was chosen, and why.
     - mask before the cache: the route masks before either cache key is computed, and
       `tests/test_pii_route.py` checks both tables after every path.
   - **Tests:** 709 pass, Postgres included.
+
+## Phase 9: cheap-vs-strong router
+
+- **`model: "auto"` is resolved in the route, not inside the provider router.** It runs right
+  after PII masking and turns `auto` into `fast` or `strong` before the alias check and both
+  cache keys. From there on everything sees a real alias: the caches, fallback, streaming and
+  cost. The request log keeps `requested_model = auto` and adds the decision.
+  - **Masked first:** the rules read what the provider will see, so an email's length can't
+    change the route.
+  - **Before the placeholder note:** the note is a system message, and the rules don't read
+    those, but it isn't the client's text anyway.
+  - **Shared cache entries:** `auto` uses the entries of the alias it picks. That's safe
+    because the rules are deterministic: an `auto` hit is an answer that alias gave to the
+    same request. Entries are never shared across aliases (tested).
+- **Rules, not a model, in `app/routing/auto.py`.** The first match sends the request to
+  `strong`; nothing matching means `fast`:
+  1. `long_answer`: `max_tokens` ≥ 2048;
+  2. `long_conversation`: 5 or more user messages;
+  3. `code_block`: a ``` fence in the last user message;
+  4. `pasted_text`: 3 or more non-empty lines in it (code, a log, a passage);
+  5. `long_prompt`: 20 or more tokens in it;
+  6. `keyword:<word>`: one of 28 words or phrases that ask for work (`implement`, `write`,
+     `prove`, `step by step`, `explain`, `compare`, `debug`, `solve`, `summarize`...). Whole
+     words, any case, any spacing.
+
+  - **Only the last user message is read** (apart from the turn count and max_tokens), so a
+    long system prompt or earlier turns don't make a short question hard.
+  - **Every decision has a reason a person can read.** It's a rule name, or `keyword:` and
+    the configured keyword, never request text, so logging it can't leak PII that masking
+    missed. The column's CHECK refuses anything else.
+  - **The thresholds and keywords live in the `auto:` section of `config/models.yaml`.** It
+    is validated like the rest of the file: typos are refused, both aliases must exist, and
+    `auto` can't be an alias name.
+  - **`/v1/models` lists `auto`** only when both of its aliases can be served.
+  - **Headers:** `x-gateway-route` and `x-gateway-route-reason` on every `auto` reply,
+    streams and cache hits included.
+- **Measured offline with `scripts/eval_router.py` on the 378 labelled prompts.**
+  - **The split:** meaning groups (a prompt and its `dup_of` rephrasings) are split by a hash,
+    giving 278 train and 100 test prompts, so a rephrasing is never on the other side of its
+    original.
+  - **The choice rule, set before the sweep:** the length threshold with the fewest hard
+    prompts sent to `fast` on train, as long as no more than 2% of easy prompts go to
+    `strong`. A hard prompt on `fast` risks a worse answer; an easy one on `strong` costs
+    one request at twice the price.
+  - **The sweep:**
+
+    | `long_prompt_tokens` | cheap (train / test) | hard → cheap (train / test) | easy → strong (train / test) |
+    |---|---|---|---|
+    | 10 | 52.9% / 52.0% | 2.2% / 0.0% | 21.6% / 18.8% |
+    | 15 | 66.9% / 64.0% | 5.4% / 5.6% | 2.2% / 3.1% |
+    | **20 (chosen)** | **68.7% / 64.0%** | **9.7% / 5.6%** | **1.6% / 3.1%** |
+    | 30 | 70.1% / 68.0% | 12.9% / 13.9% | 1.1% / 1.6% |
+    | 40 | 71.2% / 68.0% | 16.1% / 13.9% | 1.1% / 1.6% |
+    | off | 71.6% / 70.0% | 17.2% / 19.4% | 1.1% / 1.6% |
+
+    15 sent 2.2% of easy train prompts to `strong`, just over the rule, so the pick is 20.
+  - **Test split at 20:** 64% to `fast`; 2 of 36 hard prompts to `fast`; 2 of 64 easy
+    prompts to `strong`.
+  - **The saving:** a `fast` request costs half a `strong` one at list price (gpt-oss-20b vs
+    120b), so this is about 32% less than sending everything to `strong`, if both used the
+    same tokens. Phase 11's replay measures it for real.
+  - **Against the plan's first keyword list** (`write code`, `prove`, `step by step`,
+    `analyze`), with the other rules the same: 91% of hard train prompts and 81% of hard
+    test prompts went to `fast`. Few prompts in the dataset use those exact phrases.
+  - **Which rule decided, all 378 prompts:** `default` 266, `keyword` 101, `long_prompt` 7,
+    `pasted_text` 4.
+  - **Where it fails:** short hard prompts with no keyword, such as "How many different ways
+    can 8 people sit around a round table?", "sql query for second highest salary in
+    employees table" and "postgres vs mongodb for an e-commerce app built by a small team,
+    which and why?". The miss list was not used to add keywords, so the test numbers aren't
+    tuned to it.
+- **Live spot-check, 2026-10-25 (`scripts/check_router_live.py`, `docs/router_spotcheck.md`).**
+  - **What was asked:** 26 prompts that `auto` sends to `fast`: all 11 labelled hard (the
+    router's mistakes) and a fixed sample of 15 easy ones. Each went through the running
+    gateway as `auto`, which came back as `x-gateway-route: fast` every time, and as
+    `strong`, with the cache off and max_tokens 1024. Every call was served by Groq
+    (gpt-oss-20b vs 120b).
+  - **Easy prompts:** `fast` was right on all 15. `strong` only added a sentence of context
+    to the one-line facts.
+  - **The 11 hard ones:** `fast` was right on every one, with the same result as `strong`:
+    - **Maths:** 7! = 5,040 seatings, ∫x·eˣ dx = eˣ(x − 1) + C.
+    - **Reasoning:** Monty Hall at 2/3.
+    - **Code:** working SQL, NumPy, binary search and retry-decorator code.
+    - **Advice:** Postgres over MongoDB for a small e-commerce team, the same pick as
+      `strong`.
+    - **The one slip:** in the pandas-merge answer, a side remark that NaN keys are
+      "considered distinct" is wrong (pandas matches NaN keys to each other). Its main
+      diagnosis, many-to-many keys, is right, and `strong` was vague on the same point.
+  - **Verdict:** on this sample, sending these prompts to `fast` loses no quality that
+    matters. "Hard" in this dataset mostly means "longer answer", which gpt-oss-20b handles.
+    It's 26 prompts judged by one reader, not a benchmark.
+- **The numbers are optimistic, and the README says so.**
+  - **The keywords weren't written blind:** the list was written after reading the dataset.
+    The split only keeps the length threshold honest.
+  - **The easy prompts are all short** (60 characters at most), so the length rule looks
+    better here than it will on real traffic, where a long easy question goes to `strong`.
+- **Left out:**
+  - **v2:** a logistic regression on the embeddings, as the user decided.
+  - **Escalation:** retrying a weak `fast` answer on `strong`. It's listed as a limit.

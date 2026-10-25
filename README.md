@@ -3,9 +3,10 @@
 An OpenAI-compatible proxy in front of multiple LLM providers, with fallback, per-key rate
 limits, exact and semantic caching, PII masking and a cost dashboard.
 
-Status: Phase 8 done (Groq + Gemini behind model aliases with retry and fallback, streaming,
+Status: Phase 9 done (Groq + Gemini behind model aliases with retry and fallback, streaming,
 API keys, per-key rate limits, a request log with the cost of every call, an exact-match and
-an opt-in semantic cache, and PII masking). See [plan.md](plan.md) for the roadmap.
+an opt-in semantic cache, PII masking, and `model: "auto"`, which picks the cheap or the
+strong alias per request). See [plan.md](plan.md) for the roadmap.
 
 ## Quick start
 
@@ -26,6 +27,7 @@ live in [config/models.yaml](config/models.yaml):
 |---|---|---|
 | `fast` | Groq `openai/gpt-oss-20b` → Gemini `gemini-3.5-flash-lite` | cheap, quick |
 | `strong` | Groq `openai/gpt-oss-120b` → Gemini `gemini-3.8-flash` | better answers |
+| `auto` | `fast` or `strong`, picked per request | see [below](#cheap-vs-strong-router-auto) |
 | `mock` | mock provider | no provider keys needed |
 | `demo-fallback` | always-failing mock → mock | fallback demo, no provider keys |
 | `demo-midstream` | mock that fails mid-answer → mock | streaming failure demo, no provider keys |
@@ -215,6 +217,54 @@ Known limits:
 - **One spelling restored:** a value written two ways comes back in the spelling first seen.
 - **Dropped placeholders:** a model that drops a placeholder drops the value with it. The note
   stopped that in every measured run, but there's no guarantee.
+
+### Cheap-vs-strong router (`auto`)
+
+`model: "auto"` lets the gateway pick: a request goes to `strong` if any rule below matches,
+and to `fast` otherwise. The rules are checked in this order, and the first match is the
+reason:
+
+| Reason | Matches when | Reads |
+|---|---|---|
+| `long_answer` | `max_tokens` ≥ 2048 | the request |
+| `long_conversation` | 5 or more user messages | the request |
+| `code_block` | a ``` fence | last user message |
+| `pasted_text` | 3 or more non-empty lines | last user message |
+| `long_prompt` | 20 or more tokens | last user message |
+| `keyword:<word>` | a keyword such as `implement`, `prove`, `step by step`, `explain` | last user message |
+| `default` | nothing above: goes to `fast` | |
+
+The thresholds and keywords are in the `auto:` section of
+[config/models.yaml](config/models.yaml). Routing runs after PII masking, on what the provider
+will see, and is deterministic, so `auto` shares cache entries with the alias it picks. The
+reply carries `x-gateway-route: fast` and `x-gateway-route-reason: default`. The request log
+keeps `requested_model = auto`, and adds `routed_alias` and `route_reason` (a rule name, never
+request text).
+
+```bash
+uv run python -m scripts.eval_router --show-misses     # offline, on data/queries.jsonl
+```
+
+**Measured** on the 378 labelled prompts, with a train/test split (details:
+`docs/decisions.md`): `auto` sends 64% of the test split to `fast`, about 32% cheaper than
+sending everything to `strong` at list price. 2 of 36 hard prompts went to `fast` (6%), and 2
+of 64 easy ones went to `strong` (3%). The plan's first keyword list (`write code`, `prove`,
+`step by step`, `analyze`) sent 81% of the hard prompts to `fast`.
+
+**Spot-checked live** with `scripts/check_router_live.py`: 26 prompts `auto` sends to `fast`,
+including all 11 labelled hard, were answered by both aliases. `fast` got every one right,
+the hard ones included, and only one answer had a wrong side remark. The answers are side by
+side in [docs/router_spotcheck.md](docs/router_spotcheck.md).
+
+Known limits:
+
+- **Fitted to its own dataset:** the keywords were written by someone who had read the
+  prompts, and the dataset's easy prompts are all short. On real traffic, expect more long
+  easy prompts to go to `strong`, and more hard prompts with no keyword to go to `fast`.
+- **No second chance:** a weak answer from `fast` isn't retried on `strong`.
+- **English keywords:** a hard question in Hindi only reaches `strong` by its length.
+- **Startup:** for the first seconds, until tiktoken has loaded, tokens are counted as
+  characters / 4, so a prompt right at the length threshold may be routed either way.
 
 ## Layout
 
