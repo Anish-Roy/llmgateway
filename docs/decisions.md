@@ -693,3 +693,26 @@ One entry per phase: what was chosen, and why.
   by accident. One test runs the real model, only when it's already in the local Hugging
   Face cache: it checks that "capital of france?" is closer to "What's the capital of
   France?" than "capital of Germany?" is. CI never downloads it.
+- **The threshold experiment replays the cache, not "nearest earlier prompt".** Each prompt
+  is compared only with earlier prompts that missed, because a hit isn't stored. Matching
+  against every earlier prompt would let hits chain through other hits and give a higher
+  hit rate than the gateway (or the Phase 11 replay) would ever see. The stored set changes
+  with the threshold, so the replay runs once per threshold. Right and wrong are judged by
+  meaning group (a prompt and its `dup_of` near-duplicates), not "matched its original":
+  only 51 of the 96 duplicates come after their original in file order, and an original
+  that hits its earlier duplicate is a right hit.
+- **The rule for picking the threshold was written before the first run:** the lowest
+  threshold with no false hits at it or at any threshold above it.
+- **Finding: with MiniLM alone, no threshold from 0.80 to 0.97 meets that rule**
+  (`docs/semantic_threshold.png`, `.csv`). Even at 0.97 the cache makes 5 false hits out of
+  16, all on trap pairs. Cosine similarity can't see word order or a changed number:
+  - "convert a string to an integer in JavaScript" vs "an integer to a string": 0.996;
+  - "100 miles to kilometres" vs "100 kilometres to miles": 0.993;
+  - the 5-machines riddle with "1 machine" vs "100 machines": 0.994;
+  - the same equations with `5x + y` vs `5x - y`: 0.985.
+
+  The best possible hit rate on this log is 25.4% (every near-duplicate caught). Single
+  stage, the hit rate falls to 7.9% at 0.95, where 6 of the 30 hits are still wrong. All 32
+  pairs counted false at any threshold were read: none is an unlabelled rephrasing. The
+  non-trap ones are genuinely different questions, such as a rephrased "second highest
+  salary" query matching the "third highest" one.
