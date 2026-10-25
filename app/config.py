@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # The exact-match cache answers only requests whose temperature is set and at most this.
     # Above it, answers are meant to vary. 0 caches only fully greedy requests.
     cache_max_temperature: float = Field(default=0.2, ge=0, le=2)
+    # How long a cached answer is served. Longer saves more, but a provider's model can change
+    # under the same name, and a stale answer keeps being served until it expires.
+    cache_ttl_s: float = Field(default=86_400, gt=0)
 
     # Model aliases and the providers behind them. See config/models.yaml.
     models_file: Path = Path(__file__).resolve().parent.parent / "config" / "models.yaml"

@@ -558,3 +558,26 @@ One entry per phase: what was chosen, and why.
   choices (`n` > 1) aren't cached either.
 - **`x-gateway-cache: off` (any case) skips the cache both ways:** no lookup, no store. Any
   other value keeps it on, so a typo never silently turns caching off.
+- **Answers live in Postgres (`response_cache`), not Redis.** The plan allowed either. A
+  primary-key lookup on the local container takes about a millisecond, well inside the
+  "under ~10 ms" goal, and one fewer service keeps deploys simple. The key is the raw 32-byte
+  digest (`bytea`, length checked), not hex: half the size, and nobody types it.
+- **The answer is stored as a `ChatResponse` in `jsonb`, whatever kind of request produced
+  it.** Streamed answers are assembled into the same shape (step 4), so either kind of request
+  can be served from either kind of entry, and Phase 7 can replay semantic hits the same way.
+- **Each entry keeps who answered and what that call cost.** Hits are logged at $0, since
+  nothing was billed; the stored cost is what a hit saved, which Phase 10's dashboard and
+  Phase 11's "cut cost by X%" need without re-deriving it.
+- **TTL: `CACHE_TTL_S`, 24 h by default, from the gateway's clock.** `expires_at` is written
+  with the row and a lookup ignores expired rows, so expiry needs no background job. A new
+  answer for the same key replaces the row and restarts its TTL (an upsert, so two identical
+  requests storing at once is fine). `delete_expired` only clears space; it will run at
+  startup. 24 h because providers update models under the same name: a long TTL would keep
+  serving an older model's answer.
+- **The cache can't fail or slow a request.** `ResponseCache.get` turns any error into a miss
+  with a warning, and so does a lookup slower than 0.5 s: at that point the database is
+  struggling, and the provider is the faster answer. Stores run as kept tasks drained at
+  shutdown, like request logs. That task bookkeeping is a copy of `LogWriter`'s, not shared:
+  six lines, and a shared helper can come if a third writer appears.
+- **Stores are a Protocol with a Postgres and an in-memory version**, like `KeyStore` and
+  `UsageLog`. The clock is injectable, so TTL tests don't wait.
