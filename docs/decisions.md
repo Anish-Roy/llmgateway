@@ -813,3 +813,33 @@ One entry per phase: what was chosen, and why.
   0.95 with the guard, so the gateway serves what was measured. Lookups, embedding plus query,
   took 24 ms p50, 34 ms p95 and 45 ms at most, well inside the 0.5 s lookup timeout. A
   request that opts in and misses pays that on top of the provider call.
+- **In the route: exact, then semantic, then the provider.** The semantic lookup runs only
+  after an exact miss, inside the same guard as the alias check, so a removed alias still
+  fails before either cache is read. A semantic hit goes through the exact hit's code: the
+  reserved tokens go back, the row is logged with `cache_status = 'semantic'` at $0, the
+  headers name who first answered with `x-gateway-attempts: 0`, and a stream gets the SSE
+  replay. The reply says `semantic` in `x-gateway-cache`.
+- **A miss stores the answer in both caches; a hit stores nothing.** The exact entry is shared,
+  the semantic one is the key's own. A semantic hit isn't copied into the exact cache, where
+  a fuzzy match would come back later looking like an exact one.
+- **The exact cache stays shared, even for requests that opt in.** Bob asking a question
+  word for word as Alice did gets Alice's answer from the exact cache, as in Phase 6: it's the
+  answer that request would get anyway. Only the semantic cache, which answers *different*
+  wording, is scoped per key. A test pins both.
+- **Checked live (2026-10-25)** on a real server, with MiniLM, Postgres and Groq, through the
+  openai SDK (`scripts/smoke_openai_sdk.py --semantic`), with a key made by the CLI and
+  revoked afterwards:
+  - "What is the capital of Canada?" then "What's the capital of Canada?" (similarity
+    0.994): the second was a `semantic` hit, plain and as a stream, in about 33 ms end to end
+    and 25 to 27 ms in the gateway, at $0. The miss before it took about 700 ms.
+  - "What is the capital of Australia?" then "capital of australia?" (0.942): a miss, as
+    0.95 says it should be.
+  - "Convert 100 miles to kilometres." then "Convert 100 kilometres to miles.": a `semantic`
+    hit that served the miles-to-km answer. This is one of the 4 false hits the experiment
+    measured, reproduced live, and the reason the cache is opt-in.
+  - The 4 misses were stored, and none of the hits were.
+- **Found live: punctuation moves MiniLM more than case does.** "what is the capital of
+  australia" (no question mark) scores only 0.900 against the same question with "?". The
+  model lowercases, so it's the "?" that costs 0.04. Normalising punctuation before
+  embedding might raise the hit rate, but it would change what the threshold was measured
+  on. If it's tried, it goes through the experiment first.

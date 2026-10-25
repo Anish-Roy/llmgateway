@@ -120,17 +120,32 @@ cacheable request without the cache, add `-H 'x-gateway-cache: off'`.
 
 Known limit: two identical requests that arrive at the same moment both call the provider.
 
-### Semantic cache (Phase 7, being built)
+### Semantic cache
 
-The semantic cache answers a question *similar* to one already answered: "capital of france?"
-after "What's the capital of France?". It will be **opt-in per request**: a client sends
-`x-gateway-cache: semantic`, and the exact cache is still checked first. Opt-in, because it
-gives wrong answers, and only the app knows whether a near answer is good enough.
+The semantic cache answers a question *similar* to one already answered: "What's the capital
+of Canada?" after "What is the capital of Canada?". It's **opt-in per request**: send
+`x-gateway-cache: semantic`. The exact cache is still checked first, and a semantic hit
+says `semantic` in `x-gateway-cache`, costs $0 and is logged with `cache_status = 'semantic'`.
+Opt-in, because it gives wrong answers, and only the app knows whether a near answer is good
+enough.
+
+```bash
+curl -s localhost:8000/v1/chat/completions -H "Authorization: Bearer $KEY" \
+  -H 'x-gateway-cache: semantic' -H 'Content-Type: application/json' \
+  -d '{"model": "fast", "temperature": 0, "messages": [{"role": "user", "content": "What'"'"'s the capital of Canada?"}]}'
+```
+
+With the openai SDK: `extra_headers={"x-gateway-cache": "semantic"}`, or `default_headers` on
+the client. `scripts/smoke_openai_sdk.py --semantic "a rephrasing"` runs the whole flow.
 
 It embeds the user message with all-MiniLM-L6-v2 and serves a stored answer when the cosine
 similarity is at least `SEMANTIC_CACHE_THRESHOLD` (0.95) **and** both prompts hold the same
 numbers. Only single-turn requests are embedded: an optional system message and one user
-message, no tools. A chat with earlier turns skips the semantic cache.
+message, no tools. A chat with earlier turns skips the semantic cache. Everything else in the
+request (alias, system prompt, `max_tokens`, `stop`...) must match exactly, and a key is only
+ever served its own entries: a semantic hit answers a different question, which may carry
+another team's details. A miss adds about 25 ms (embedding plus the lookup) to the provider
+call.
 
 **Measured** by replaying `data/queries.jsonl` (378 prompts, 96 near-duplicates, 48 look-alike
 "trap" pairs) through `scripts/eval_semantic_cache.py`:

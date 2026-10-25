@@ -89,9 +89,9 @@ class Recording:
 
         self._submit(entry)
 
-    def cached(self, entry: CacheEntry) -> None:
-        """An answer served from the cache: no provider was called, so nothing was billed.
-        The row names who first answered, for the dashboard."""
+    def cached(self, entry: CacheEntry, cache_status: CacheStatus = "exact") -> None:
+        """An answer served from the exact or the semantic cache: no provider was called, so
+        nothing was billed. The row names who first answered, for the dashboard."""
         self._submit(
             lambda: self._entry(
                 status_code=200,
@@ -99,7 +99,7 @@ class Recording:
                 target=Target(provider=entry.provider, model=entry.model),
                 usage=Usage(),
                 attempts=0,
-                cache_status="exact",
+                cache_status=cache_status,
             )
         )
 

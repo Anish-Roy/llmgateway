@@ -19,6 +19,8 @@ from app.api.sse import sse_replay, sse_response
 from app.auth.keys import ApiKey
 from app.auth.rate_limit import RateLimiter, Reservation
 from app.cache.key import CACHE_HEADER, storable
+from app.cache.semantic import SEMANTIC
+from app.cache.semantic_store import SemanticCache, SemanticLookup
 from app.cache.store import CacheEntry, ResponseCache
 from app.routing.registry import Target
 from app.routing.router import ModelRouter, RoutedStream
@@ -48,6 +50,10 @@ def get_response_cache(request: Request) -> ResponseCache:
     return request.app.state.response_cache
 
 
+def get_semantic_cache(request: Request) -> SemanticCache:
+    return request.app.state.semantic_cache
+
+
 @router.post("/chat/completions", response_model=ChatResponse)
 async def chat_completions(
     body: ChatRequest,
@@ -58,6 +64,7 @@ async def chat_completions(
     limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
     recorder: Annotated[UsageRecorder, Depends(get_usage_recorder)],
     cache: Annotated[ResponseCache, Depends(get_response_cache)],
+    semantic: Annotated[SemanticCache, Depends(get_semantic_cache)],
 ):
     # Every request from here on gets a row in request_logs, written after it ends: a reply,
     # a closed stream, or an error.
@@ -73,22 +80,31 @@ async def chat_completions(
 
     # Both kinds of request share entries: the key leaves `stream` out. None when the request
     # isn't cacheable or the client turned the cache off.
-    cache_key = cache.key_for(body, request.headers.get(CACHE_HEADER))
+    cache_header = request.headers.get(CACHE_HEADER)
+    cache_key = cache.key_for(body, cache_header)
+    # Only with `x-gateway-cache: semantic`, on a cacheable single-turn request, matched among
+    # this API key's own entries. None otherwise.
+    lookup = semantic.lookup_for(body, cache_header, key.id)
+    hit_status = "exact"
     try:
         # An alias that's gone from the registry (404), or has no provider here any more
         # (503), fails as it would without a cache: entries stored for it aren't served.
         model_router.targets(body.model)
         entry = await cache.get(cache_key) if cache_key is not None else None
+        # Exact first: it's cheaper, and it can't be wrong.
+        if entry is None and lookup is not None:
+            entry = await semantic.get(lookup)
+            hit_status = SEMANTIC
     except BaseException as e:
-        # The lookup never raises: this is the alias check, or the client leaving.
+        # The lookups never raise: this is the alias check, or the client leaving.
         reservation.settle(0)
         recording.failed(e)
         raise
     if entry is not None:
         # No provider call: the reserved tokens go back (the request still counts).
         reservation.settle(0)
-        recording.cached(entry)
-        headers = {**_cache_hit_headers(entry), **limit_headers}
+        recording.cached(entry, hit_status)
+        headers = {**_cache_hit_headers(entry, hit_status), **limit_headers}
         if body.stream:
             return sse_replay(entry.response, include_usage=_wants_usage(body), headers=headers)
         response.headers.update(headers)
@@ -96,8 +112,8 @@ async def chat_completions(
     cache_status = "miss" if cache_key is not None else "bypass"
 
     def keep(answer: ChatResponse, target: Target, usage: Usage) -> None:
-        if cache_key is not None:
-            _keep(cache, recorder, cache_key, body.model, answer, target, usage)
+        if cache_key is not None or lookup is not None:
+            _keep(cache, semantic, recorder, cache_key, lookup, body.model, answer, target, usage)
 
     if body.stream:
         # The router picks a provider before the response starts, so a failure before the
@@ -141,15 +157,18 @@ async def chat_completions(
 
 def _keep(
     cache: ResponseCache,
+    semantic: SemanticCache,
     recorder: UsageRecorder,
-    key: bytes,
+    key: bytes | None,
+    lookup: SemanticLookup | None,
     alias: str,
     answer: ChatResponse,
     target: Target,
     usage: Usage,
 ) -> None:
-    """Stores an answer for the next identical request, if it's worth serving again. Never
-    fails the request: the client has the answer, or is about to."""
+    """Stores an answer for the next identical request, and for the next similar one if this
+    request opted in to the semantic cache, if it's worth serving again. Never fails the
+    request: the client has the answer, or is about to."""
     if not storable(answer):
         return
     try:
@@ -157,14 +176,17 @@ def _keep(
     except Exception:
         logger.warning("could not price an answer for the cache", exc_info=True)
         return
-    cache.put(
-        key,
-        alias=alias,
-        response=answer,
-        provider=target.provider,
-        model=target.model,
-        cost_usd=cost_usd,
-    )
+    stored = {
+        "alias": alias,
+        "response": answer,
+        "provider": target.provider,
+        "model": target.model,
+        "cost_usd": cost_usd,
+    }
+    if key is not None:
+        cache.put(key, **stored)
+    if lookup is not None:
+        semantic.put(lookup, **stored)
 
 
 def _served_again(stored: ChatResponse) -> ChatResponse:
@@ -172,10 +194,10 @@ def _served_again(stored: ChatResponse) -> ChatResponse:
     return ChatResponse.model_validate(stored.model_dump(exclude={"id", "created"}))
 
 
-def _cache_hit_headers(entry: CacheEntry) -> dict[str, str]:
+def _cache_hit_headers(entry: CacheEntry, status: str) -> dict[str, str]:
     # Who first answered; no provider was called this time.
     target = Target(provider=entry.provider, model=entry.model)
-    return {**_gateway_headers(target, 0, False), CACHE_HEADER: "exact"}
+    return {**_gateway_headers(target, 0, False), CACHE_HEADER: status}
 
 
 def _stream_finished(

@@ -6,6 +6,10 @@ GATEWAY_API_KEY=gw-... uv run python scripts/smoke_openai_sdk.py --model fast
 
 Asks once, then the same again (an exact cache hit), then the same as a stream (a hit replayed
 as SSE). Within CACHE_TTL_S of an earlier run the first call is a hit too: change --prompt.
+
+With --semantic "a rephrasing", every request opts in to the semantic cache, and the
+rephrasing is asked last, plain and as a stream: both semantic hits if it's similar enough
+(SEMANTIC_CACHE_THRESHOLD) and holds the same numbers.
 """
 
 import argparse
@@ -21,6 +25,9 @@ def main() -> None:
     parser.add_argument("--model", default="fast", help="an alias from config/models.yaml")
     parser.add_argument("--prompt", default="Say hello in five words.")
     parser.add_argument(
+        "--semantic", metavar="REPHRASED", help="opt in, and ask this rephrasing at the end"
+    )
+    parser.add_argument(
         "--api-key",
         default=os.environ.get("GATEWAY_API_KEY"),
         help="a gateway key from scripts/create_key.py (default: $GATEWAY_API_KEY)",
@@ -29,7 +36,10 @@ def main() -> None:
 
     if not args.api_key:
         parser.error("set GATEWAY_API_KEY or pass --api-key")
-    client = OpenAI(base_url=args.base_url, api_key=args.api_key, max_retries=0)
+    headers = {"x-gateway-cache": "semantic"} if args.semantic else {}
+    client = OpenAI(
+        base_url=args.base_url, api_key=args.api_key, max_retries=0, default_headers=headers
+    )
     # temperature 0, so the cache may answer.
     request = {
         "model": args.model,
@@ -60,6 +70,18 @@ def main() -> None:
     print(f"[stream] {_served(raw.headers, started)}")
     print(f"  reply:  {text}")
     print(f"  tokens: {usage.prompt_tokens} in, {usage.completion_tokens} out")
+
+    if args.semantic:
+        rephrased = {**request, "messages": [{"role": "user", "content": args.semantic}]}
+        started = time.perf_counter()
+        raw = client.chat.completions.with_raw_response.create(**rephrased)
+        print(f"[rephrased] {_served(raw.headers, started)}")
+        print(f"  reply:  {raw.parse().choices[0].message.content}")
+        started = time.perf_counter()
+        raw = client.chat.completions.with_raw_response.create(**rephrased, stream=True)
+        text = "".join(c.choices[0].delta.content or "" for c in raw.parse() if c.choices)
+        print(f"[rephrased stream] {_served(raw.headers, started)}")
+        print(f"  reply:  {text}")
 
 
 def _served(headers, started: float) -> str:
