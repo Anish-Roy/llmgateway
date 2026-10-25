@@ -14,6 +14,7 @@ from scripts.eval_semantic_cache import Query
 from scripts.replay import (
     BASELINE,
     MODES,
+    OVERHEAD_MODES,
     ModeKey,
     Replayer,
     Result,
@@ -22,6 +23,8 @@ from scripts.replay import (
     load_results,
     markdown_table,
     mode_cost,
+    overhead,
+    overhead_table,
     percentile,
     saved_share,
     summarize,
@@ -143,6 +146,27 @@ def test_the_table_compares_each_mode_with_the_first():
     assert lines[3].startswith("| cache | 2 | 0.0100 | 50.0% | 50.0% (0 / 1) | 0 | - | 0 |")
 
 
+def test_overhead_counts_only_answered_misses():
+    results = [
+        _r("a", latency_ms=10),
+        _r("b", "bypass", latency_ms=20),
+        _r("c", "semantic", latency_ms=1),
+        _r("d", "exact", latency_ms=1),
+        _r("e", status=500, latency_ms=900),
+        _r("f", latency_ms=30),
+    ]
+    o = overhead("overhead-semantic", results)
+    assert (o.misses, o.p50_ms) == (3, 20)
+    assert o.p95_ms == pytest.approx(29)
+
+
+def test_overhead_table_has_a_row_per_way():
+    rows = [overhead("overhead-off", [_r("a", latency_ms=4.25)]), overhead("overhead-exact", [])]
+    lines = overhead_table(rows).splitlines()
+    assert lines[2] == "| overhead-off | 1 | 4.2 ms | 4.2 ms |"
+    assert lines[3] == "| overhead-exact | 0 | 0.0 ms | 0.0 ms |"
+
+
 # The runner.
 
 
@@ -192,6 +216,20 @@ def test_the_system_prompt_differs_by_mode_so_the_exact_cache_does_too():
         replayer.send("r1", mode, "gw-k", _q("a"))
     systems = {json.loads(r.content)["messages"][0]["content"] for r in gateway.requests}
     assert len(systems) == 3
+
+
+def test_the_overhead_modes_send_the_mock_alias_with_each_cache_setting():
+    gateway = FakeGateway()
+    replayer = _replayer(gateway, [])
+    for mode in OVERHEAD_MODES:
+        replayer.send("r1", mode, "gw-k", _q("a"))
+    assert {json.loads(r.content)["model"] for r in gateway.requests} == {"mock"}
+    # No header at all is the default: the exact cache only.
+    assert [r.headers.get("x-gateway-cache") for r in gateway.requests] == [
+        "off",
+        None,
+        "semantic",
+    ]
 
 
 def test_the_reply_headers_become_the_result():

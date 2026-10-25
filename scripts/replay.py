@@ -21,6 +21,14 @@ Per mode it reports:
     fallbacks        prompts a second provider answered: a fallback model has its own price
     p50 / p95        latency as the client saw it, over the prompts answered
 
+`overhead` measures what the gateway itself adds: the same prompts to the `mock` alias, whose
+provider answers at once (no latency, no network), so the time the client sees is the
+gateway's own: HTTP, auth, rate limit, PII masking, the cache lookups and the store. Three
+ways: caches off, the exact cache (the default), and the semantic cache too, which embeds the
+prompt with MiniLM. Only misses are counted: a hit skips the provider call, which here costs
+nothing, so it would only make the cache look cheaper than it is. Runs on the machine the
+gateway runs on; the numbers are that machine's.
+
 A run calls the real providers (about 900 calls for the whole log) and logs them at list price;
 not for CI. Each mode sends the log in file order, one request at a time, and pauses after
 every provider call: for the provider's rate limit, and so a cache store has landed before the
@@ -28,6 +36,7 @@ next lookup.
 
 uv run uvicorn app.main:app            # with GROQ_API_KEY / GEMINI_API_KEY in .env
 uv run python -m scripts.replay run    # all three modes; rerun to resume
+uv run python -m scripts.replay overhead    # free: the mock alias calls no provider
 uv run python -m scripts.replay report
 
 Runs resume. Each answered prompt is appended to data/replay/<run>/<mode>.jsonl as it comes
@@ -71,12 +80,17 @@ KEY_TPM = 100_000_000
 class Mode:
     name: str
     model: str
-    # The x-gateway-cache request header.
-    cache: str
+    # The x-gateway-cache request header; None sends none (the exact cache only).
+    cache: str | None
 
 
 BASELINE = Mode("baseline", "strong", "off")
 MODES = [BASELINE, Mode("cache", "strong", "semantic"), Mode("cache+router", "auto", "semantic")]
+OVERHEAD_MODES = [
+    Mode("overhead-off", "mock", "off"),
+    Mode("overhead-exact", "mock", None),
+    Mode("overhead-semantic", "mock", "semantic"),
+]
 
 
 @dataclass(frozen=True)
@@ -176,6 +190,32 @@ def saved_share(cost_usd: Decimal, baseline_usd: Decimal) -> float | None:
     if not baseline_usd:
         return None
     return float(1 - cost_usd / baseline_usd)
+
+
+@dataclass(frozen=True)
+class Overhead:
+    mode: str
+    misses: int
+    p50_ms: float
+    p95_ms: float
+
+
+def overhead(mode: str, results: list[Result]) -> Overhead:
+    """The gateway's own latency, over the answered misses."""
+    misses = [r.latency_ms for r in results if r.answered and r.cache not in ("exact", "semantic")]
+    return Overhead(
+        mode=mode,
+        misses=len(misses),
+        p50_ms=percentile(misses, 0.5) if misses else 0.0,
+        p95_ms=percentile(misses, 0.95) if misses else 0.0,
+    )
+
+
+def overhead_table(rows: list[Overhead]) -> str:
+    lines = ["| Gateway overhead | Requests | p50 | p95 |", "|---|--:|--:|--:|"]
+    for o in rows:
+        lines.append(f"| {o.mode} | {o.misses} | {o.p50_ms:,.1f} ms | {o.p95_ms:,.1f} ms |")
+    return "\n".join(lines)
 
 
 def _percent(share: float | None) -> str:
@@ -279,7 +319,9 @@ class Replayer:
             "temperature": 0,
             "max_tokens": self.max_tokens,
         }
-        headers = {"Authorization": f"Bearer {key}", "x-gateway-cache": mode.cache}
+        headers = {"Authorization": f"Bearer {key}"}
+        if mode.cache is not None:
+            headers["x-gateway-cache"] = mode.cache
         started = time.perf_counter()
         r = self.http.post("/chat/completions", json=body, headers=headers)
         latency_ms = (time.perf_counter() - started) * 1000
@@ -336,18 +378,16 @@ def _modes(names: list[str] | None) -> list[Mode]:
     return [by_name[n] for n in names]
 
 
-def run(args: argparse.Namespace, queries: list[Query]) -> int:
+def run(args: argparse.Namespace, queries: list[Query], modes: list[Mode], pause: float) -> int:
     state = args.dir / "state.json"
     current = None if args.new else Run.load(state)
     if current is None:
         current = Run.new()
         current.save(state)
         print(f"Started run {current.id}.")
-    replayer = Replayer(
-        httpx.Client(base_url=args.base_url, timeout=60), args.max_tokens, args.pause
-    )
+    replayer = Replayer(httpx.Client(base_url=args.base_url, timeout=60), args.max_tokens, pause)
     with psycopg.connect(get_settings().database_url, autocommit=True) as conn:
-        for mode in _modes(args.mode):
+        for mode in modes:
             if mode.name not in current.keys:
                 key, record = create_key(conn, f"replay-{current.id}-{mode.name}", KEY_RPM, KEY_TPM)
                 current.keys[mode.name] = ModeKey(record.id, key)
@@ -358,32 +398,41 @@ def run(args: argparse.Namespace, queries: list[Query]) -> int:
             except Stopped as e:
                 print(f"\nStopped: {e}. Rerun to resume.", file=sys.stderr)
                 return 1
-    print(f"\nRun {current.id} is complete.")
+    print(f"\nRun {current.id}: {', '.join(m.name for m in modes)} complete.")
     return 0
 
 
 def report(args: argparse.Namespace, queries: list[Query]) -> int:
     current = Run.load(args.dir / "state.json")
-    if current is None or BASELINE.name not in current.keys:
-        print("No run with a baseline yet: `run` first.", file=sys.stderr)
+    if current is None:
+        print("No run yet: `run` or `overhead` first.", file=sys.stderr)
         return 1
-    auto = load_registry(get_settings().models_file).auto
-    summaries = []
-    with psycopg.connect(get_settings().database_url) as conn:
-        for mode in MODES:
-            if mode.name not in current.keys:
-                continue
-            results = load_results(results_path(args.dir, current, mode))
-            if len(results) < len(queries):
-                print(f"{mode.name}: {len(results)} of {len(queries)} prompts so far")
-            alias = auto.cheap if auto and mode.model == "auto" else None
-            cost = mode_cost(conn, current.keys[mode.name].id)
-            summaries.append(summarize(mode.name, results, queries, cost, alias))
-    print(f"\nRun {current.id}\n")
-    print(markdown_table(summaries))
-    for s in summaries:
-        if s.false_hits:
-            print(f"\n{s.mode} false hits: {', '.join(s.false_hits)}")
+    print(f"Run {current.id}")
+    if BASELINE.name in current.keys:
+        auto = load_registry(get_settings().models_file).auto
+        summaries = []
+        with psycopg.connect(get_settings().database_url) as conn:
+            for mode in MODES:
+                if mode.name not in current.keys:
+                    continue
+                results = load_results(results_path(args.dir, current, mode))
+                if len(results) < len(queries):
+                    print(f"{mode.name}: {len(results)} of {len(queries)} prompts so far")
+                alias = auto.cheap if auto and mode.model == "auto" else None
+                cost = mode_cost(conn, current.keys[mode.name].id)
+                summaries.append(summarize(mode.name, results, queries, cost, alias))
+        print()
+        print(markdown_table(summaries))
+        for s in summaries:
+            if s.false_hits:
+                print(f"\n{s.mode} false hits: {', '.join(s.false_hits)}")
+    measured = [m for m in OVERHEAD_MODES if m.name in current.keys]
+    if measured:
+        rows = [
+            overhead(m.name, load_results(results_path(args.dir, current, m))) for m in measured
+        ]
+        print()
+        print(overhead_table(rows))
     return 0
 
 
@@ -391,27 +440,36 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     run_parser = commands.add_parser("run", help="replay the log; resumes the current run")
-    run_parser.add_argument("--base-url", default="http://localhost:8000/v1")
     run_parser.add_argument(
         "--mode", action="append", choices=[m.name for m in MODES], help="repeat; default all"
     )
-    run_parser.add_argument("--new", action="store_true", help="start another run, new keys")
-    run_parser.add_argument("--limit", type=int, help="only the first N prompts of the log")
-    # Well under auto's long_answer_max_tokens, which would send every request to strong.
-    run_parser.add_argument("--max-tokens", type=int, default=512)
     run_parser.add_argument(
         "--pause", type=float, default=5.0, help="seconds after a provider call"
     )
-    report_parser = commands.add_parser("report", help="the results table of the current run")
+    overhead_parser = commands.add_parser(
+        "overhead", help="the gateway's own latency, on the mock alias; resumes too"
+    )
+    for sub in (run_parser, overhead_parser):
+        sub.add_argument("--base-url", default="http://localhost:8000/v1")
+        sub.add_argument("--new", action="store_true", help="start another run, new keys")
+        sub.add_argument("--limit", type=int, help="only the first N prompts of the log")
+        # Well under auto's long_answer_max_tokens, which would send every request to strong.
+        sub.add_argument("--max-tokens", type=int, default=512)
+    report_parser = commands.add_parser("report", help="the results tables of the current run")
     report_parser.add_argument("--limit", type=int, help="score only the first N prompts")
-    for sub in (run_parser, report_parser):
+    for sub in (run_parser, overhead_parser, report_parser):
         sub.add_argument("--dir", type=Path, default=RUNS, help="where runs are kept")
     args = parser.parse_args(argv)
 
     queries = load_queries(DATASET)[: args.limit]
-    if args.command == "run":
-        return run(args, queries)
-    return report(args, queries)
+    match args.command:
+        case "run":
+            return run(args, queries, _modes(args.mode), args.pause)
+        case "overhead":
+            # The mock provider has no rate limit to stay under.
+            return run(args, queries, OVERHEAD_MODES, pause=0)
+        case _:
+            return report(args, queries)
 
 
 if __name__ == "__main__":
