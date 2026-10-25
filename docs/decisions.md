@@ -521,3 +521,15 @@ One entry per phase: what was chosen, and why.
   recorder, as it builds the rate limiter, and the lifespan replaces it with the Postgres log and
   the registry's prices. Most tests never run the lifespan; the ones that do get an in-memory
   log from `conftest`, which already gives them no pool.
+- **Phase 5 "done when", checked live (2026-10-25)** on a real server and Postgres, with keys
+  made by the CLI and a scratch registry adding a Gemini-only alias (`lite`). Nine requests
+  made nine rows, and every row's tokens matched what the client was sent:
+  - Groq replies on `fast` and `strong`, a `fast` stream (TTFT 509 ms of 543 ms), and Gemini
+    Flash-Lite. Each `cost_usd` matched the cost recomputed in SQL from the listed prices, to
+    the last digit. For example, 81 + 44 tokens on gpt-oss-20b cost
+    (81 x $0.075 + 44 x $0.30) / 1M = $0.000019275.
+  - `demo-fallback`: answered by mock, 3 attempts, `fallback` true, $0.
+  - `demo-midstream`: status 200, `provider_error`, 4 completion tokens marked as estimated.
+  - An unknown model (404) and the second request on a 1-RPM key (429): `rejected`,
+    0 attempts, $0.
+  - The server log had only the warnings the demos are meant to cause, and no failed writes.
