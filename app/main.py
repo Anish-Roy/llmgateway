@@ -32,6 +32,8 @@ def build_providers(
                     latency_s=spec.latency_s,
                     failure_rate=spec.failure_rate,
                     fail_status=spec.fail_status,
+                    chunk_latency_s=spec.chunk_latency_s,
+                    fail_after_chunks=spec.fail_after_chunks,
                 )
             case GroqSpec():
                 if not settings.groq_api_key:

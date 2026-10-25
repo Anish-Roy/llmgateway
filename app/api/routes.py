@@ -2,8 +2,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 
-from app.api.errors import error_response
 from app.api.schemas import ChatRequest, ChatResponse, Model, ModelList
+from app.api.sse import sse_response
+from app.routing.registry import Target
 from app.routing.router import ModelRouter
 
 router = APIRouter(prefix="/v1")
@@ -21,14 +22,29 @@ async def chat_completions(
     model_router: Annotated[ModelRouter, Depends(get_model_router)],
 ):
     if body.stream:
-        # Streaming lands in Phase 3. Fail loudly rather than return a non-stream body.
-        return error_response(400, "Streaming is not supported yet", param="stream")
+        # The router picks a provider before the response starts, so a failure before the
+        # first token is still a normal JSON error with its own status, and the headers below
+        # can say which provider is streaming.
+        stream = await model_router.stream(body)
+        headers = _gateway_headers(stream.target, stream.attempts, stream.fallback)
+        return sse_response(stream, include_usage=_wants_usage(body), headers=headers)
     routed = await model_router.chat(body)
-    # The registry name ("groq", "flaky"...), so the fallback demo shows which entry answered.
-    response.headers["x-gateway-provider"] = routed.target.provider
-    response.headers["x-gateway-attempts"] = str(routed.attempts)
-    response.headers["x-gateway-fallback"] = "true" if routed.fallback else "false"
+    response.headers.update(_gateway_headers(routed.target, routed.attempts, routed.fallback))
     return routed.response
+
+
+def _gateway_headers(target: Target, attempts: int, fallback: bool) -> dict[str, str]:
+    return {
+        # The registry name ("groq", "flaky"...), so the fallback demo shows which entry answered.
+        "x-gateway-provider": target.provider,
+        "x-gateway-attempts": str(attempts),
+        "x-gateway-fallback": "true" if fallback else "false",
+    }
+
+
+def _wants_usage(body: ChatRequest) -> bool:
+    options = (body.model_extra or {}).get("stream_options")
+    return isinstance(options, dict) and options.get("include_usage") is True
 
 
 @router.get("/models", response_model=ModelList)

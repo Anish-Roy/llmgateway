@@ -3,11 +3,12 @@
 Field names checked against ai.google.dev on 2026-10-25 (see docs/decisions.md).
 """
 
+from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 import httpx
 
-from app.api.schemas import ChatMessage, ChatRequest, ChatResponse, Choice, Usage
+from app.api.schemas import ChatChunk, ChatMessage, ChatRequest, ChatResponse, Choice, Usage
 from app.providers.base import ProviderError
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
@@ -90,6 +91,18 @@ class GeminiProvider:
             raise ProviderError(
                 502, "Gemini returned an unreadable response", provider=self.name
             ) from e
+
+    def stream(self, request: ChatRequest) -> AsyncIterator[ChatChunk]:
+        # Placeholder until this adapter streams (Phase 3). Provider-specific, so the router
+        # moves on to a provider that can.
+        raise ProviderError(
+            400,
+            "Streaming is not supported by this provider yet",
+            type="invalid_request_error",
+            param="stream",
+            provider=self.name,
+            provider_specific=True,
+        )
 
 
 def to_gemini(request: ChatRequest, thinking_level: ThinkingLevel | None = None) -> dict[str, Any]:

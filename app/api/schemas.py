@@ -48,6 +48,44 @@ class ChatResponse(BaseModel):
     usage: Usage = Field(default_factory=Usage)
 
 
+class Delta(BaseModel):
+    # Providers add fields we don't model (tool_calls, reasoning...). Keep them for the client.
+    model_config = ConfigDict(extra="allow")
+
+    role: Literal["assistant"] | None = None
+    content: str | None = None
+
+
+class ChunkChoice(BaseModel):
+    index: int = 0
+    delta: Delta = Field(default_factory=Delta)
+    finish_reason: str | None = None
+
+
+class ChatChunk(BaseModel):
+    """One server-sent event of a streamed chat completion, in OpenAI's chunk format.
+
+    `id`, `created` and `model` are the same on every chunk of a stream. The last chunk may
+    carry `usage` with an empty `choices` list, as OpenAI sends with `include_usage`.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    object: Literal["chat.completion.chunk"] = "chat.completion.chunk"
+    created: int
+    model: str
+    choices: list[ChunkChoice] = Field(default_factory=list)
+    usage: Usage | None = None
+
+    def has_output(self) -> bool:
+        """True once the chunk carries something the client sees: text, a tool call or an end."""
+        return any(
+            c.delta.content or (c.delta.model_extra or {}).get("tool_calls") or c.finish_reason
+            for c in self.choices
+        )
+
+
 class Model(BaseModel):
     id: str
     object: Literal["model"] = "model"

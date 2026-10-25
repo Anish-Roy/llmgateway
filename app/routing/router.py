@@ -2,10 +2,10 @@ import asyncio
 import logging
 import random
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 
-from app.api.schemas import ChatRequest, ChatResponse
+from app.api.schemas import ChatChunk, ChatRequest, ChatResponse
 from app.providers.base import Provider, ProviderError
 from app.routing.registry import Target
 
@@ -83,6 +83,31 @@ class ModelRouter:
         return usable
 
     async def chat(self, request: ChatRequest) -> Routed:
+        response, target, attempts, fallback = await self._route(
+            request, lambda provider, req: provider.chat(req)
+        )
+        return Routed(response, target, attempts, fallback)
+
+    async def stream(self, request: ChatRequest) -> "RoutedStream":
+        """Opens a stream with the same retry and fallback rules as `chat`, up to the first token.
+
+        The router reads ahead until a chunk has something the client would see (text, a tool
+        call, a finish_reason) and only then commits to that provider. Leading role-only chunks
+        are held back, so a provider that fails right after one can still be replaced. Once
+        the first token is out, a failure can only end the stream: the client already has part
+        of an answer. The deadline covers the wait for the first token, not the whole answer.
+        """
+        (held, rest), target, attempts, fallback = await self._route(request, _open_stream)
+        return RoutedStream(held, rest, target, attempts, fallback)
+
+    async def _route[T](
+        self, request: ChatRequest, call: Callable[[Provider, ChatRequest], Awaitable[T]]
+    ) -> tuple[T, Target, int, bool]:
+        """Runs `call` on each target in turn, with the retry/fallback policy in the class doc.
+
+        Returns the result, the target that produced it, the number of provider calls and
+        whether that target was a fallback.
+        """
         targets = self.targets(request.model)
         deadline = time.monotonic() + self._deadline_s
         attempts = 0
@@ -98,7 +123,7 @@ class ModelRouter:
                     raise _final_error(errors, _deadline_error())
                 attempts += 1
                 try:
-                    response = await asyncio.wait_for(provider.chat(routed_request), remaining)
+                    result = await asyncio.wait_for(call(provider, routed_request), remaining)
                 except TimeoutError:
                     # The gateway's deadline ran out mid-call: there's no time for anything else.
                     errors.append(_deadline_error(target.provider))
@@ -106,7 +131,7 @@ class ModelRouter:
                 except ProviderError as e:
                     err = e
                 else:
-                    return Routed(response, target, attempts, fallback=i > 0)
+                    return result, target, attempts, i > 0
 
                 logger.warning(
                     "%s/%s failed (attempt %d): %s %s",
@@ -143,3 +168,66 @@ def _final_error(errors: list[ProviderError], default: ProviderError | None = No
     if errors:
         return errors[-1]
     return default or _deadline_error()
+
+
+class RoutedStream:
+    """A provider's stream after the router committed to it: iterate it for the chunks.
+
+    Call `aclose` when done, finished or not, so the upstream connection is freed even if the
+    stream was never iterated (say, the client left before the response started).
+    """
+
+    def __init__(
+        self,
+        held: list[ChatChunk],
+        rest: AsyncIterator[ChatChunk],
+        target: Target,
+        attempts: int,
+        fallback: bool,
+    ) -> None:
+        self._held = held
+        self._rest = rest
+        self.target = target
+        self.attempts = attempts
+        self.fallback = fallback
+
+    async def __aiter__(self) -> AsyncIterator[ChatChunk]:
+        for chunk in self._held:
+            yield chunk
+        async for chunk in self._rest:
+            yield chunk
+
+    async def aclose(self) -> None:
+        await _aclose(self._rest)
+
+
+async def _open_stream(
+    provider: Provider, request: ChatRequest
+) -> tuple[list[ChatChunk], AsyncIterator[ChatChunk]]:
+    """Starts a stream and reads it up to the first chunk with output.
+
+    Returns the chunks read so far and the open iterator for the rest. On any failure,
+    including the router's deadline cancelling it, the stream is closed before re-raising.
+    """
+    chunks = aiter(provider.stream(request))
+    held: list[ChatChunk] = []
+    try:
+        async for chunk in chunks:
+            held.append(chunk)
+            if chunk.has_output():
+                return held, chunks
+    except BaseException:
+        await _aclose(chunks)
+        raise
+    # A 200 that ended without saying anything: as broken as an error, and another provider
+    # may do better.
+    raise ProviderError(
+        502, "Provider ended the stream without sending a reply", provider=provider.name
+    )
+
+
+async def _aclose(chunks: AsyncIterator[ChatChunk]) -> None:
+    # Async generators have aclose(); a plain iterator has nothing to free.
+    aclose = getattr(chunks, "aclose", None)
+    if aclose is not None:
+        await aclose()

@@ -147,3 +147,41 @@ One entry per phase: what was chosen, and why.
   - Gemini followed a system prompt.
   - The same fallbacks are also covered offline by `tests/test_provider_fallback.py`, which
     runs the real adapters over a faked transport.
+
+## Phase 3: streaming
+
+- **Fallback stops at the first token the client would see, not at the first byte from the
+  provider.** The router opens the stream inside the same retry/fallback/deadline loop as
+  `chat()` (the policy is shared, not copied) and reads ahead until a chunk has text, a tool call
+  or a `finish_reason`. Groq and OpenAI send an empty role-only chunk first. Committing on that
+  chunk would give up fallback for exactly the failures it's for, so leading empty chunks are
+  held back. A 200 stream that ends without a reply counts as a retryable 502.
+- **The provider is chosen before the response starts.** The route awaits the router up to the
+  commit point, then returns the `StreamingResponse`. If every provider fails before the first
+  token, the client gets a normal JSON error with the right status (a 429 is still
+  `RateLimitError` in the SDK), not a 200 that breaks. The `x-gateway-*` headers still work.
+- **After the first token, a failure is an error event and the stream ends without `[DONE]`.**
+  The event is `data: {"error": {...}}`, which the openai SDK raises as `APIError` (checked in
+  its `_streaming.py`). No fallback, because a second answer glued onto half of the first would
+  be worse than an honest error.
+- **The deadline covers the wait for the first token, not the whole answer.** A long answer can
+  legitimately take more than 45 s. After the commit, a stalled provider is caught by the HTTP
+  client's read timeout between chunks, and that becomes a mid-stream error.
+- **Every upstream stream is closed, however the request ends.** That covers a failure while
+  reading ahead (including the deadline cancelling it), a mid-stream error, and a client that
+  disconnects. Starlette 1.9 doesn't close the body iterator on a disconnect: under ASGI 2.4 it
+  raises `ClientDisconnect` and leaves the generator suspended until garbage collection. The
+  SSE response therefore closes the provider stream in a `finally` around the whole response.
+  A test runs the app with a `send` that fails after the first chunk, and it fails without
+  that `finally`.
+- **The usage-only chunk (`choices: []`) is sent only when the client asks** with
+  `stream_options.include_usage`, as OpenAI does. Code that reads `chunk.choices[0]` is common
+  and would crash on it. Providers are still expected to report usage, because Phase 5 logs it.
+- **`Cache-Control: no-cache` and `X-Accel-Buffering: no`** so proxies on the hosting platforms
+  pass each chunk on as it comes instead of buffering the answer.
+- **The mock streams like OpenAI** (a role chunk, a word per chunk, a finish chunk, a usage
+  chunk). Its `fail_after_chunks` option separates the two cases: 1 fails after the role chunk
+  (still replaceable), 2 or more fails mid-answer. `demo-midstream` uses it.
+- **Until their adapters stream, Groq and Gemini return a provider-specific 400** for
+  `stream=True`. The router moves on to a provider that can stream, and the client gets an honest 400
+  if none can.

@@ -92,19 +92,6 @@ async def test_empty_messages_is_bad_request():
         await client.chat.completions.create(model="mock-model", messages=[])
 
 
-async def test_stream_true_is_rejected_until_phase_3():
-    provider = MockProvider()
-    client = make_client(provider)
-
-    with pytest.raises(openai.BadRequestError) as exc_info:
-        await client.chat.completions.create(
-            model="mock-model", messages=[{"role": "user", "content": "hi"}], stream=True
-        )
-
-    assert exc_info.value.body["param"] == "stream"
-    assert provider.calls == 0
-
-
 async def test_unknown_model_raises_not_found():
     provider = MockProvider()
     client = make_client(provider)

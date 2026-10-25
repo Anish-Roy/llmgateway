@@ -1,6 +1,8 @@
+from collections.abc import AsyncIterator
+
 import httpx
 
-from app.api.schemas import ChatRequest, ChatResponse
+from app.api.schemas import ChatChunk, ChatRequest, ChatResponse
 from app.providers.base import ProviderError
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
@@ -70,6 +72,18 @@ class GroqProvider:
             raise ProviderError(
                 502, "Groq returned an unreadable response", provider=self.name
             ) from e
+
+    def stream(self, request: ChatRequest) -> AsyncIterator[ChatChunk]:
+        # Placeholder until this adapter streams (Phase 3). Provider-specific, so the router
+        # moves on to a provider that can.
+        raise ProviderError(
+            400,
+            "Streaming is not supported by this provider yet",
+            type="invalid_request_error",
+            param="stream",
+            provider=self.name,
+            provider_specific=True,
+        )
 
 
 def _error_from_response(resp: httpx.Response) -> ProviderError:

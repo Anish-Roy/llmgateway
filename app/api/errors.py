@@ -22,6 +22,22 @@ _TYPE_BY_STATUS = {
 }
 
 
+def error_body(
+    status: int,
+    message: str,
+    type: str | None = None,
+    param: str | None = None,
+    code: str | None = None,
+) -> ErrorResponse:
+    detail = ErrorDetail(
+        message=message,
+        type=type or _TYPE_BY_STATUS.get(status, "api_error"),
+        param=param,
+        code=code,
+    )
+    return ErrorResponse(error=detail)
+
+
 def error_response(
     status: int,
     message: str,
@@ -29,13 +45,8 @@ def error_response(
     param: str | None = None,
     code: str | None = None,
 ) -> JSONResponse:
-    detail = ErrorDetail(
-        message=message,
-        type=type or _TYPE_BY_STATUS.get(status, "api_error"),
-        param=param,
-        code=code,
-    )
-    return JSONResponse(ErrorResponse(error=detail).model_dump(), status_code=status)
+    body = error_body(status, message, type, param, code)
+    return JSONResponse(body.model_dump(), status_code=status)
 
 
 async def _provider_error(request: Request, exc: ProviderError) -> JSONResponse:

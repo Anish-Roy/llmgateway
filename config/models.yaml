@@ -26,6 +26,13 @@ providers:
   flaky:
     type: mock
     failure_rate: 1.0
+  # Streams a few words, then fails (a 503). Shows that a stream can't fall back once the
+  # client has part of an answer. Non-streamed requests answer normally.
+  midstream:
+    type: mock
+    reply: "This answer will be cut off partway through."
+    chunk_latency_s: 0.2
+    fail_after_chunks: 4
 
 aliases:
   # Cheap and quick. Flash-Lite thinks at "minimal" by default, so max_tokens stays for the answer.
@@ -45,4 +52,9 @@ aliases:
   # Check the x-gateway-provider / x-gateway-attempts / x-gateway-fallback headers.
   demo-fallback:
     - flaky/mock-model
+    - mock/mock-model
+  # Mid-stream failure demo (stream=True): the client gets "This answer will", then an error
+  # event. mock is listed but never asked, because fallback stops at the first token.
+  demo-midstream:
+    - midstream/mock-model
     - mock/mock-model

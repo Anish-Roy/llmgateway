@@ -1,6 +1,7 @@
+from collections.abc import AsyncIterator
 from typing import Protocol
 
-from app.api.schemas import ChatRequest, ChatResponse
+from app.api.schemas import ChatChunk, ChatRequest, ChatResponse
 
 # Statuses worth trying on another provider. A 400 would fail the same way anywhere.
 RETRYABLE_STATUSES = {408, 429, 500, 502, 503, 504}
@@ -55,3 +56,11 @@ class Provider(Protocol):
     name: str
 
     async def chat(self, request: ChatRequest) -> ChatResponse: ...
+
+    def stream(self, request: ChatRequest) -> AsyncIterator[ChatChunk]:
+        """The reply as OpenAI-format chunks. Usually an async generator.
+
+        A failure raises ProviderError, either from this call or while iterating. The caller
+        closes the iterator (`aclose`) when it stops early, so the upstream connection is freed.
+        """
+        ...

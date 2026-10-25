@@ -37,6 +37,9 @@ class MockSpec(BaseModel):
     latency_s: float = Field(default=0.0, ge=0)
     failure_rate: float = Field(default=0.0, ge=0, le=1)
     fail_status: int = 503
+    # Streaming only: the wait between chunks, and a failure after this many chunks.
+    chunk_latency_s: float = Field(default=0.0, ge=0)
+    fail_after_chunks: int | None = Field(default=None, ge=0)
 
 
 ProviderSpec = Annotated[GroqSpec | GeminiSpec | MockSpec, Field(discriminator="type")]

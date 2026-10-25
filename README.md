@@ -26,6 +26,7 @@ live in [config/models.yaml](config/models.yaml):
 | `strong` | Groq `openai/gpt-oss-120b` → Gemini `gemini-3.8-flash` | better answers |
 | `mock` | mock provider | no keys needed |
 | `demo-fallback` | always-failing mock → mock | fallback demo, no keys |
+| `demo-midstream` | mock that fails mid-answer → mock | streaming failure demo, no keys |
 
 `GET /v1/models` lists the aliases this deployment can serve. If a provider times out, rate
 limits (429) or errors (5xx), the gateway retries once where that helps and moves to the next
@@ -57,6 +58,22 @@ curl -si localhost:8000/v1/chat/completions -H 'content-type: application/json' 
 ```
 
 Look for `x-gateway-provider: mock`, `x-gateway-attempts: 3` and `x-gateway-fallback: true`.
+
+### Streaming
+
+`stream=True` returns server-sent events in OpenAI's chunk format, ending with `data: [DONE]`.
+Add `stream_options={"include_usage": True}` to get a final chunk with token usage. Fallback
+works until the first token: the gateway picks a provider before it starts the response, so a
+provider that fails early is replaced, and if all of them fail you get a normal JSON error. Once
+part of the answer has been sent, a failure ends the stream with an error event instead of
+`[DONE]`, and the openai SDK raises it as an `APIError`. `demo-midstream` shows this:
+
+```bash
+curl -sN localhost:8000/v1/chat/completions -H 'content-type: application/json' \
+  -d '{"model": "demo-midstream", "stream": true, "messages": [{"role": "user", "content": "hi"}]}'
+```
+
+For now only the mock provider streams. Groq and Gemini come next in Phase 3.
 
 ## Layout
 
