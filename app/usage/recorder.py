@@ -15,11 +15,12 @@ from decimal import Decimal
 from app.api.schemas import ChatRequest, Usage
 from app.auth.keys import ApiKey
 from app.auth.rate_limit import RateLimitExceeded
+from app.cache.store import CacheEntry
 from app.providers.base import ProviderError
 from app.routing.registry import Price, Target
 from app.routing.router import ModelNotFoundError, Routed, RoutedStream
 from app.usage.cost import cost
-from app.usage.log import LogOutcome, LogWriter, RequestLog
+from app.usage.log import CacheStatus, LogOutcome, LogWriter, RequestLog
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,8 @@ class UsageRecorder:
     def start(self, key: ApiKey, body: ChatRequest) -> "Recording":
         return Recording(self, key.id, body.model, bool(body.stream))
 
-    def _cost(self, target: Target, usage: Usage) -> Decimal:
+    def cost(self, target: Target, usage: Usage) -> Decimal:
+        """What `usage` on `target` costs at its list price."""
         return cost(self._price(target), usage)
 
 
@@ -87,6 +89,20 @@ class Recording:
 
         self._submit(entry)
 
+    def cached(self, entry: CacheEntry) -> None:
+        """An answer served from the cache: no provider was called, so nothing was billed.
+        The row names who first answered, for the dashboard."""
+        self._submit(
+            lambda: self._entry(
+                status_code=200,
+                outcome="completed",
+                target=Target(provider=entry.provider, model=entry.model),
+                usage=Usage(),
+                attempts=0,
+                cache_status="exact",
+            )
+        )
+
     def failed(self, exc: BaseException) -> None:
         """An error before any reply: the gateway refused it, or no provider answered."""
 
@@ -118,6 +134,7 @@ class Recording:
         usage_estimated: bool = False,
         fallback: bool = False,
         ttft_ms: int | None = None,
+        cache_status: CacheStatus = "miss",
     ) -> RequestLog:
         return RequestLog(
             key_id=self._key_id,
@@ -133,10 +150,16 @@ class Recording:
             usage_estimated=usage_estimated,
             latency_ms=round((time.monotonic() - self._started) * 1000),
             ttft_ms=ttft_ms,
-            # Failed calls cost nothing: providers don't bill an error.
-            cost_usd=self._recorder._cost(target, usage) if target else Decimal(0),
+            # Failed calls cost nothing: providers don't bill an error. Nor do cache hits, and
+            # the model that first answered may since have lost its price.
+            cost_usd=(
+                self._recorder.cost(target, usage)
+                if target and cache_status == "miss"
+                else Decimal(0)
+            ),
             attempts=attempts,
             fallback=fallback,
+            cache_status=cache_status,
         )
 
     def _submit(self, build: Callable[[], RequestLog]) -> None:

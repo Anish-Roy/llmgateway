@@ -1,9 +1,9 @@
-"""The exact-match cache's key and which requests it may answer. Pure functions: no app, no DB."""
+"""The exact-match cache's key, which requests it may answer and which answers it keeps."""
 
 import pytest
 
-from app.api.schemas import ChatRequest
-from app.cache.key import cache_key, cacheable, opted_out
+from app.api.schemas import ChatRequest, ChatResponse
+from app.cache.key import cache_key, cacheable, opted_out, storable
 
 
 def _request(**overrides) -> ChatRequest:
@@ -122,3 +122,40 @@ def test_header_off_opts_out(header):
 @pytest.mark.parametrize("header", [None, "", "on", "exact", "no"])
 def test_anything_else_keeps_the_cache(header):
     assert not opted_out(header)
+
+
+def _reply(**choice) -> ChatResponse:
+    fields = {"message": {"role": "assistant", "content": "HTTP is a protocol."}} | choice
+    return ChatResponse.model_validate({"model": "m", "choices": [fields]})
+
+
+@pytest.mark.parametrize("finish_reason", ["stop", "length"])
+def test_a_finished_text_answer_is_storable(finish_reason):
+    assert storable(_reply(finish_reason=finish_reason))
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        _reply(message={"role": "assistant", "content": ""}),
+        _reply(message={"role": "assistant", "content": None}),
+        _reply(
+            message={
+                "role": "assistant",
+                "content": "Looking it up.",
+                "tool_calls": [{"id": "call_1", "type": "function"}],
+            }
+        ),
+        _reply(finish_reason="content_filter"),
+        _reply(finish_reason=None),
+        ChatResponse.model_validate({"model": "m", "choices": []}),
+    ],
+)
+def test_other_answers_arent(reply):
+    assert not storable(reply)
+
+
+def test_several_choices_arent_storable():
+    reply = _reply()
+    reply.choices.append(reply.choices[0].model_copy(update={"index": 1}))
+    assert not storable(reply)

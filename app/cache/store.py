@@ -16,7 +16,8 @@ from typing import Protocol
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
-from app.api.schemas import ChatResponse
+from app.api.schemas import ChatRequest, ChatResponse
+from app.cache.key import cache_key, cacheable, opted_out
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,20 @@ class InMemoryCacheStore:
         return len(expired)
 
 
+class NoCacheStore:
+    """Finds nothing and keeps nothing: the cache of an app that was never started (most
+    tests), so repeating a request never turns into a hit by surprise."""
+
+    async def get(self, key: bytes, now: datetime) -> CacheEntry | None:
+        return None
+
+    async def put(self, key: bytes, entry: CacheEntry) -> None:
+        pass
+
+    async def delete_expired(self, now: datetime) -> int:
+        return 0
+
+
 class ResponseCache:
     """The exact-match cache as the route sees it: look up before calling a provider, store
     after answering. Neither can fail the request.
@@ -142,15 +157,24 @@ class ResponseCache:
         store: CacheStore,
         *,
         ttl_s: float,
+        max_temperature: float = 0.2,
         lookup_timeout_s: float = LOOKUP_TIMEOUT_S,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self.store = store
         self._ttl = timedelta(seconds=ttl_s)
+        self._max_temperature = max_temperature
         self._lookup_timeout_s = lookup_timeout_s
         # Injectable so tests can expire entries without waiting.
         self._clock = clock
         self._pending: set[asyncio.Task[None]] = set()
+
+    def key_for(self, request: ChatRequest, header: str | None) -> bytes | None:
+        """The cache key for `request`, or None if the cache must stay out of it: the request
+        isn't cacheable, or the client's `x-gateway-cache` header turned the cache off."""
+        if opted_out(header) or not cacheable(request, self._max_temperature):
+            return None
+        return cache_key(request)
 
     async def get(self, key: bytes) -> CacheEntry | None:
         """The stored answer for `key`, or None on a miss, an expired entry, or any error."""

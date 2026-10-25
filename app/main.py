@@ -11,6 +11,7 @@ from app.api.routes import router
 from app.auth.authenticator import Authenticator
 from app.auth.keys import PostgresKeyStore
 from app.auth.rate_limit import RateLimiter
+from app.cache.store import NoCacheStore, PostgresCacheStore, ResponseCache
 from app.config import Settings, get_settings
 from app.db.pool import open_pool
 from app.providers.base import Provider
@@ -99,11 +100,21 @@ def create_app() -> FastAPI:
             )
             log_writer = LogWriter(PostgresUsageLog(db_pool))
             app.state.usage_recorder = UsageRecorder(log_writer, config.price)
+            cache = ResponseCache(
+                PostgresCacheStore(db_pool),
+                ttl_s=settings.cache_ttl_s,
+                max_temperature=settings.cache_max_temperature,
+            )
+            # Lookups skip expired entries anyway; this only frees the space.
+            await cache.delete_expired()
+            app.state.response_cache = cache
             try:
                 yield
             finally:
-                # Rows for the last requests, written before the pool below closes.
+                # Rows and cache entries for the last requests, written before the pool below
+                # closes.
                 await log_writer.drain()
+                await cache.drain()
 
     app = FastAPI(title="LLM Gateway", version=__version__, lifespan=lifespan)
     # In memory and nothing to open or close, so it's built here rather than in the lifespan.
@@ -113,6 +124,9 @@ def create_app() -> FastAPI:
     # Replaced at startup by the Postgres log and the registry's prices. An app that's never
     # started (most tests) keeps its rows in memory, at no cost.
     app.state.usage_recorder = UsageRecorder(LogWriter(InMemoryUsageLog()), lambda _: FREE)
+    # Replaced at startup by the Postgres cache. Until then nothing is cached, so tests that
+    # repeat a request keep calling the provider unless they give the app a cache themselves.
+    app.state.response_cache = ResponseCache(NoCacheStore(), ttl_s=settings.cache_ttl_s)
     install_error_handlers(app)
     app.include_router(router)
 

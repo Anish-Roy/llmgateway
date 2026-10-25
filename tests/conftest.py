@@ -6,6 +6,7 @@ import pytest
 from psycopg.conninfo import make_conninfo
 
 import app.main
+from app.cache.store import NoCacheStore
 from app.config import Settings
 from app.usage import tokens
 from app.usage.log import InMemoryUsageLog
@@ -31,6 +32,8 @@ def _no_database_at_startup(monkeypatch):
     monkeypatch.setattr(app.main, "open_pool", no_pool)
     # With no pool, request logs are kept in memory instead.
     monkeypatch.setattr(app.main, "PostgresUsageLog", lambda pool: InMemoryUsageLog())
+    # And nothing is cached, as in an app that was never started.
+    monkeypatch.setattr(app.main, "PostgresCacheStore", lambda pool: NoCacheStore())
 
 
 @pytest.fixture

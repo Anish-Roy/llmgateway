@@ -581,3 +581,30 @@ One entry per phase: what was chosen, and why.
   six lines, and a shared helper can come if a third writer appears.
 - **Stores are a Protocol with a Postgres and an in-memory version**, like `KeyStore` and
   `UsageLog`. The clock is injectable, so TTL tests don't wait.
+- **Lookup order in the route: auth, rate limit, cache, provider.** A hit settles its
+  reservation at 0, so it counts against the key's requests per minute but uses none of its
+  tokens. The cost of that order: `reserve` checks the token budget before the cache is asked,
+  so a key at its TPM limit gets a 429 even for a request that would have been a free hit.
+  Accepted, as it's simple and the same for every request. The fix, if hits should skip TPM:
+  look up first, then `limiter.acquire(key, 0)` on a hit (RPM only) and `reserve` on a miss.
+- **Only non-streamed requests use the cache so far.** Streams get it in step 4.
+- **Which answers are kept (`storable`):** one choice, with text, no tool calls, ending in
+  `stop` or `length` (`max_tokens` is in the key, so a cut answer is the answer to that
+  request). Not content filters, empty replies or failures. An answer that came from a
+  fallback provider is cached like any other: it's a real answer for that alias.
+- **A hit is a new completion with the stored answer:** a fresh `id` and `created`, the
+  original `model`, `choices` and `usage`. The client sees what the answer took to produce;
+  the request log says it cost $0 and used no tokens.
+- **The hit's row names the provider and model that first answered**, with 0 tokens, $0,
+  0 attempts and `cache_status = 'exact'`. Its cost is 0 by rule, not priced at 0 tokens, so a
+  model that has since left the price list can't lose the row.
+- **Every reply says what the cache did, in `x-gateway-cache`:** `exact`, `miss`, or `bypass`
+  (not cacheable, or the client sent `off`). The gateway headers on a hit name the original
+  provider with `x-gateway-attempts: 0`.
+- **Pricing a reply for the cache is guarded like building a log row:** a failure skips that
+  store with a warning. The client is about to get the reply, and nothing in the cache may
+  take it away.
+- **An app that's never started caches nothing (`NoCacheStore`), and `conftest` swaps the
+  Postgres store for it on startup.** An in-memory cache by default would turn every existing
+  test that repeats a temperature-0 request into a hit and change its call counts. Tests that
+  are about the cache give the app one; one test runs the real startup against Postgres.
