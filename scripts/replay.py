@@ -20,12 +20,51 @@ Per mode it reports:
                      were routed.
     fallbacks        prompts a second provider answered: a fallback model has its own price
     p50 / p95        latency as the client saw it, over the prompts answered
+
+A run calls the real providers (about 900 calls for the whole log) and logs them at list price;
+not for CI. Each mode sends the log in file order, one request at a time, and pauses after
+every provider call: for the provider's rate limit, and so a cache store has landed before the
+next lookup.
+
+uv run uvicorn app.main:app            # with GROQ_API_KEY / GEMINI_API_KEY in .env
+uv run python -m scripts.replay run    # all three modes; rerun to resume
+uv run python -m scripts.replay report
+
+Runs resume. Each answered prompt is appended to data/replay/<run>/<mode>.jsonl as it comes
+back, and a rerun skips the prompts already there, so a run stopped by a provider's daily
+limit loses nothing. A run stops at the first request that fails (not saved: the rerun tries
+it again) or that a fallback provider answered (saved, then stopped: a fallback model has its
+own price, and a run of them usually means the first provider hit a limit).
+
+The run's state is data/replay/state.json, kept out of git: the run id and, per mode, the key
+created for it (high limits, so the gateway's own rate limit never shows). `run --new` starts
+another run, with new keys. Keys give each mode its own spend in request_logs and its own
+semantic cache. The exact cache is shared by all keys, so every request carries a system
+prompt naming the run and the mode: an answer stored in one mode or run is never an exact hit
+in another. The router reads only user messages, so the system prompt doesn't change routing.
 """
 
-from dataclasses import dataclass
+import argparse
+import json
+import secrets
+import sys
+import time
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
 from decimal import Decimal
+from pathlib import Path
 
-from scripts.eval_semantic_cache import Query, meaning_groups
+import httpx
+import psycopg
+
+from app.auth.admin import create_key
+from app.config import get_settings
+from app.routing.registry import load_registry
+from scripts.eval_semantic_cache import DATASET, Query, load_queries, meaning_groups
+
+RUNS = Path(__file__).resolve().parent.parent / "data" / "replay"
+KEY_RPM = 10_000
+KEY_TPM = 100_000_000
 
 
 @dataclass(frozen=True)
@@ -161,3 +200,219 @@ def markdown_table(summaries: list[Summary]) -> str:
             f"| {s.p50_ms:,.0f} ms | {s.p95_ms:,.0f} ms |"
         )
     return "\n".join(lines)
+
+
+def system_prompt(run_id: str, mode: Mode) -> str:
+    return f"Benchmark run {run_id}, mode {mode.name}."
+
+
+@dataclass(frozen=True)
+class ModeKey:
+    id: int
+    key: str
+
+
+@dataclass
+class Run:
+    id: str
+    keys: dict[str, ModeKey]
+
+    @classmethod
+    def new(cls) -> "Run":
+        return cls(secrets.token_hex(4), {})
+
+    @classmethod
+    def load(cls, path: Path) -> "Run | None":
+        if not path.exists():
+            return None
+        state = json.loads(path.read_text())
+        keys = {mode: ModeKey(**k) for mode, k in state["keys"].items()}
+        return cls(state["run"], keys)
+
+    def save(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        keys = {mode: asdict(k) for mode, k in self.keys.items()}
+        path.write_text(json.dumps({"run": self.id, "keys": keys}, indent=2) + "\n")
+
+
+def results_path(runs: Path, run: Run, mode: Mode) -> Path:
+    return runs / run.id / f"{mode.name}.jsonl"
+
+
+def load_results(path: Path) -> list[Result]:
+    """In the order they were saved, which is the order they were sent."""
+    if not path.exists():
+        return []
+    return [Result(**json.loads(line)) for line in path.read_text().splitlines() if line]
+
+
+def append_result(path: Path, result: Result) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(asdict(result)) + "\n")
+
+
+class Stopped(Exception):
+    """A request failed, or a fallback answered it: the run stops here."""
+
+
+class Replayer:
+    def __init__(
+        self,
+        http: httpx.Client,
+        max_tokens: int,
+        pause: float,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self.http = http
+        self.max_tokens = max_tokens
+        self.pause = pause
+        self.sleep = sleep
+
+    def send(self, run_id: str, mode: Mode, key: str, query: Query) -> Result:
+        body = {
+            "model": mode.model,
+            "messages": [
+                {"role": "system", "content": system_prompt(run_id, mode)},
+                {"role": "user", "content": query.prompt},
+            ],
+            "temperature": 0,
+            "max_tokens": self.max_tokens,
+        }
+        headers = {"Authorization": f"Bearer {key}", "x-gateway-cache": mode.cache}
+        started = time.perf_counter()
+        r = self.http.post("/chat/completions", json=body, headers=headers)
+        latency_ms = (time.perf_counter() - started) * 1000
+        # Only provider calls count against the provider's rate limit; and a store lands after
+        # its response, so the pause also lets the next lookup find it.
+        if r.headers.get("x-gateway-attempts", "0") != "0":
+            self.sleep(self.pause)
+        return Result(
+            id=query.id,
+            status=r.status_code,
+            latency_ms=round(latency_ms, 1),
+            cache=r.headers.get("x-gateway-cache", "-"),
+            route=r.headers.get("x-gateway-route"),
+            fallback=r.headers.get("x-gateway-fallback") == "true",
+        )
+
+    def replay(self, run_id: str, mode: Mode, key: str, queries: list[Query], path: Path) -> int:
+        """Sends the prompts not yet in `path`, saving each answer. Returns how many it sent;
+        raises Stopped at a failure or a fallback."""
+        done = {r.id for r in load_results(path)}
+        sent = 0
+        for q in queries:
+            if q.id in done:
+                continue
+            try:
+                result = self.send(run_id, mode, key, q)
+            except httpx.HTTPError as e:
+                raise Stopped(f"{mode.name} {q.id}: {e!r}") from e
+            sent += 1
+            if not result.answered:
+                raise Stopped(f"{mode.name} {q.id}: HTTP {result.status}")
+            append_result(path, result)
+            print(
+                f"{mode.name:>12}  {q.id}  {result.cache:<8}  {result.route or '-':<6}  "
+                f"{result.latency_ms:7.0f} ms  {q.prompt[:50]}"
+            )
+            if result.fallback:
+                raise Stopped(f"{mode.name} {q.id}: answered by a fallback provider")
+        return sent
+
+
+def mode_cost(conn: psycopg.Connection, key_id: int) -> Decimal:
+    """Everything the key spent, failed and retried calls included."""
+    row = conn.execute(
+        "SELECT coalesce(sum(cost_usd), 0) FROM request_logs WHERE key_id = %s", (key_id,)
+    ).fetchone()
+    return row[0]
+
+
+def _modes(names: list[str] | None) -> list[Mode]:
+    if not names:
+        return MODES
+    by_name = {m.name: m for m in MODES}
+    return [by_name[n] for n in names]
+
+
+def run(args: argparse.Namespace, queries: list[Query]) -> int:
+    state = args.dir / "state.json"
+    current = None if args.new else Run.load(state)
+    if current is None:
+        current = Run.new()
+        current.save(state)
+        print(f"Started run {current.id}.")
+    replayer = Replayer(
+        httpx.Client(base_url=args.base_url, timeout=60), args.max_tokens, args.pause
+    )
+    with psycopg.connect(get_settings().database_url, autocommit=True) as conn:
+        for mode in _modes(args.mode):
+            if mode.name not in current.keys:
+                key, record = create_key(conn, f"replay-{current.id}-{mode.name}", KEY_RPM, KEY_TPM)
+                current.keys[mode.name] = ModeKey(record.id, key)
+                current.save(state)
+            path = results_path(args.dir, current, mode)
+            try:
+                replayer.replay(current.id, mode, current.keys[mode.name].key, queries, path)
+            except Stopped as e:
+                print(f"\nStopped: {e}. Rerun to resume.", file=sys.stderr)
+                return 1
+    print(f"\nRun {current.id} is complete.")
+    return 0
+
+
+def report(args: argparse.Namespace, queries: list[Query]) -> int:
+    current = Run.load(args.dir / "state.json")
+    if current is None or BASELINE.name not in current.keys:
+        print("No run with a baseline yet: `run` first.", file=sys.stderr)
+        return 1
+    auto = load_registry(get_settings().models_file).auto
+    summaries = []
+    with psycopg.connect(get_settings().database_url) as conn:
+        for mode in MODES:
+            if mode.name not in current.keys:
+                continue
+            results = load_results(results_path(args.dir, current, mode))
+            if len(results) < len(queries):
+                print(f"{mode.name}: {len(results)} of {len(queries)} prompts so far")
+            alias = auto.cheap if auto and mode.model == "auto" else None
+            cost = mode_cost(conn, current.keys[mode.name].id)
+            summaries.append(summarize(mode.name, results, queries, cost, alias))
+    print(f"\nRun {current.id}\n")
+    print(markdown_table(summaries))
+    for s in summaries:
+        if s.false_hits:
+            print(f"\n{s.mode} false hits: {', '.join(s.false_hits)}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    commands = parser.add_subparsers(dest="command", required=True)
+    run_parser = commands.add_parser("run", help="replay the log; resumes the current run")
+    run_parser.add_argument("--base-url", default="http://localhost:8000/v1")
+    run_parser.add_argument(
+        "--mode", action="append", choices=[m.name for m in MODES], help="repeat; default all"
+    )
+    run_parser.add_argument("--new", action="store_true", help="start another run, new keys")
+    run_parser.add_argument("--limit", type=int, help="only the first N prompts of the log")
+    # Well under auto's long_answer_max_tokens, which would send every request to strong.
+    run_parser.add_argument("--max-tokens", type=int, default=512)
+    run_parser.add_argument(
+        "--pause", type=float, default=5.0, help="seconds after a provider call"
+    )
+    report_parser = commands.add_parser("report", help="the results table of the current run")
+    report_parser.add_argument("--limit", type=int, help="score only the first N prompts")
+    for sub in (run_parser, report_parser):
+        sub.add_argument("--dir", type=Path, default=RUNS, help="where runs are kept")
+    args = parser.parse_args(argv)
+
+    queries = load_queries(DATASET)[: args.limit]
+    if args.command == "run":
+        return run(args, queries)
+    return report(args, queries)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

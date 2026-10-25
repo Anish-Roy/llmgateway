@@ -11,3 +11,6 @@ __pycache__/
 
 plan.md
 project.md
+
+# The replay benchmark's keys (scripts/replay.py). Its results are kept.
+data/replay/state.json
