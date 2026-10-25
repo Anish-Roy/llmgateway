@@ -314,3 +314,19 @@ One entry per phase: what was chosen, and why.
 - **Postgres tests run in a throwaway schema** (`search_path` set on the connection) and skip
   when Postgres isn't reachable. Tests that start the app get no pool, the same way they skip
   the tiktoken download, so the rest of the suite needs no database.
+- **Keys are `gw-` plus `secrets.token_urlsafe(32)`, stored as a plain SHA-256.** bcrypt and
+  argon2 exist because people pick guessable passwords; a 256-bit random key can't be guessed,
+  so a slow hash would only add tens of milliseconds to every request. And their per-row salt
+  would rule out finding a key by its hash with one index lookup. The `gw-` prefix makes a
+  leaked key easy to recognise (secret scanners match on prefixes like this).
+- **The first 10 characters are stored as `key_prefix`.** `list` and `revoke` can then show
+  which key is which without the secret. 7 random characters (~42 bits) tell keys apart and
+  leave the other 36 characters unguessable.
+- **The gateway's `KeyStore` is read-only: one method, `get_by_hash`.** Keys are created and
+  revoked only by `scripts/create_key.py`, which connects to the database directly. No admin
+  HTTP endpoint means no admin secret to protect and nothing for an attacker to call. A
+  Postgres store and an in-memory one (for tests) implement the protocol, as with providers.
+- **`get_by_hash` returns revoked keys too, marked inactive.** The auth step can then tell
+  "revoked" from "never existed" in its logs. Both still get the same 401.
+- **Revoking sets `active = false` instead of deleting the row,** so Phase 5's request logs
+  keep pointing at a real key, and revoking twice is harmless.
