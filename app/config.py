@@ -5,6 +5,8 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.cache.semantic import DEFAULT_THRESHOLD
+
 
 class Settings(BaseSettings):
     """Gateway configuration, read from environment variables or a `.env` file."""
@@ -46,6 +48,9 @@ class Settings(BaseSettings):
     # The semantic cache answers a question similar enough to one already answered. Off, the
     # embedding model is never loaded: startup is ~11 s faster and the process ~430 MB smaller.
     semantic_cache_enabled: bool = True
+    # The cosine similarity a stored question needs to answer a new one, on requests that opt
+    # in. See app/cache/semantic.py for what each value was measured to cost in wrong answers.
+    semantic_cache_threshold: float = Field(default=DEFAULT_THRESHOLD, gt=0, le=1)
 
     # Model aliases and the providers behind them. See config/models.yaml.
     models_file: Path = Path(__file__).resolve().parent.parent / "config" / "models.yaml"

@@ -120,6 +120,36 @@ cacheable request without the cache, add `-H 'x-gateway-cache: off'`.
 
 Known limit: two identical requests that arrive at the same moment both call the provider.
 
+### Semantic cache (Phase 7, being built)
+
+The semantic cache answers a question *similar* to one already answered: "capital of france?"
+after "What's the capital of France?". It will be **opt-in per request**: a client sends
+`x-gateway-cache: semantic`, and the exact cache is still checked first. Opt-in, because it
+gives wrong answers, and only the app knows whether a near answer is good enough.
+
+It embeds the user message with all-MiniLM-L6-v2 and serves a stored answer when the cosine
+similarity is at least `SEMANTIC_CACHE_THRESHOLD` (0.95) **and** both prompts hold the same
+numbers. Only single-turn requests are embedded: an optional system message and one user
+message, no tools. A chat with earlier turns skips the semantic cache.
+
+**Measured** by replaying `data/queries.jsonl` (378 prompts, 96 near-duplicates, 48 look-alike
+"trap" pairs) through `scripts/eval_semantic_cache.py`:
+
+| Threshold 0.95, with the numbers guard | |
+|---|---|
+| Hit rate | **7.1%** of prompts (27), out of a possible 25.4% |
+| False-hit rate | **14.8%**: 4 of the 27 hits answered a different question |
+| Trap pairs answered wrongly | 4 of 48 (8.3%) |
+
+![Hit rate and false-hit rate by threshold](docs/semantic_threshold.png)
+
+No threshold from 0.80 to 0.97 is free of wrong answers. Embedding similarity can't see word
+order: "convert a string to an integer in JavaScript" and "an integer to a string" score
+0.996, and "100 miles to kilometres" vs "100 kilometres to miles" 0.993. The numbers guard
+catches questions a digit apart ($1.10 vs $1.20) but not those. The log is adversarial on
+purpose (one near pair in three is a trap), so real traffic should do better, but that isn't
+measured. Details and what was tried (a cross-encoder check, which did worse): `docs/decisions.md`.
+
 ## Layout
 
 ```
@@ -128,7 +158,7 @@ app/
   providers/    Groq, Gemini and mock adapters
   routing/      model registry, cheap-vs-strong router
   auth/         API keys, rate limits
-  cache/        exact-match cache (semantic: Phase 7)
+  cache/        exact-match and semantic caches
   guardrails/   PII masking
   usage/        request logs, cost
   config.py     settings from env / .env

@@ -716,3 +716,44 @@ One entry per phase: what was chosen, and why.
   pairs counted false at any threshold were read: none is an unlabelled rephrasing. The
   non-trap ones are genuinely different questions, such as a rephrased "second highest
   salary" query matching the "third highest" one.
+- **Tried and rejected: a cross-encoder that checks the top match**
+  (`cross-encoder/quora-distilroberta-base`, trained on Quora duplicate questions; measured in a
+  scratch run, never added to the project). MiniLM found the candidate at 0.80 or 0.85, and the
+  cross-encoder read both prompts together and had to agree. It was worse than useless:
+  - it called the traps duplicates: miles/km 0.982, string/int 0.968, `+ y`/`- y` 0.969,
+    "national animal"/"national bird" of India 0.980;
+  - it called real rephrasings different: "Define photosynthesis." / "what is
+    photosynthesis" 0.0003, "what is docker used for" / "What is Docker?" 0.0002;
+  - no verifier threshold from 0.05 to 0.95 reached zero false hits (still 3 of 49 at 0.95,
+    retrieval 0.85);
+  - it costs 30 ms p50 and 53 ms p95 per check on the CPU, 330 MB on disk, about 260 MB more
+    memory, and 76 s to load the first time.
+
+  Quora's "duplicate" means "the same topic", which is close but not what a cache needs. A
+  word-order swap is invisible to it too.
+- **Kept: a numbers guard** (`same_numbers` in app/cache/semantic.py). A match must hold the
+  same numbers as the new prompt, in any order. Free (a regex), and at 0.95 it turns away 2
+  wrong answers (bat-and-ball at $1.10 vs $1.20, the riddle with 1 vs 100 machines) for 1 right
+  one ("three bullets" vs "3 bullet points": numbers written as words aren't understood). It
+  can't see order, so miles/km, string/int and `+ y`/`- y` still get through.
+- **Decision: the semantic cache is opt-in per request, at 0.95 with the numbers guard.** No
+  setup measured is free of wrong answers, so the gateway can't decide for every app that a
+  near answer is good enough. An FAQ bot may happily take 1 wrong answer in 7 hits to save
+  calls; a coding assistant can't. Portkey makes the same call. A client asks with
+  `x-gateway-cache: semantic` (exact is still checked first); without the header a request
+  gets the exact cache only, and `off` still turns both off. 0.95 is the user's choice, not
+  the rule's (the rule picked nothing): it's where the wrong-answer count gets low (4) before
+  the hit rate falls off sharply (7.1% at 0.95, 4.5% at 0.96).
+- **What a client opting in gets, measured on the query log at 0.95 with the guard:**
+  - 27 semantic hits in 378 prompts: a **7.1% hit rate**, out of a possible 25.4%;
+  - 4 of those 27 were wrong: a **14.8% false-hit rate**; all 4 were trap pairs, so 4 of the
+    48 look-alike pairs (8.3%) got the other one's answer. Those 4: miles/km, string/int,
+    `5x - y` vs `5x + y`, "at least one six" vs "exactly one six".
+
+  The log is adversarial on purpose: 48 trap pairs against 96 near-duplicates, so one near
+  pair in three is a trap. Real traffic has fewer, so its false-hit rate is likely lower, but
+  that isn't measured here and the README doesn't claim it. The full table, both setups, is
+  `docs/semantic_threshold.csv`.
+- **A different embedding model wasn't tried.** Word-order swaps fool pooled sentence
+  embeddings in general, and the plan names MiniLM. Running bge-small or mpnet through the
+  same script is the cheap next check if the false-hit rate ever needs to come down.

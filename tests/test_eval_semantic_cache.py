@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from app.cache.embedder import DIMENSIONS
+from app.cache.semantic import same_numbers
 from scripts.eval_semantic_cache import (
     DATASET,
     Hit,
@@ -74,6 +75,33 @@ def test_the_same_text_again_is_an_exact_hit_not_a_semantic_one():
     result = replay(queries, _vectors(1.0), threshold=0.85)
     assert result.exact_hits == 1
     assert result.hits == []
+
+
+def test_a_match_the_guard_turns_away_is_a_miss_and_is_stored():
+    # b is close enough to a, but the guard says no: b misses and is stored, so c, which
+    # matches b best (cos 0.99) and passes the guard, hits b rather than a.
+    queries = [_q("a", "cost 1.10"), _q("b", "cost 1.20"), _q("c", "costs 1.20")]
+    vectors = _vectors(0.9, 0.8)
+    result = replay(queries, vectors, threshold=0.85, guard=same_numbers)
+    assert [(h.query, h.matched) for h in result.hits] == [("c", "b")]
+
+
+def test_the_guard_sees_the_new_prompt_and_the_stored_one():
+    seen = []
+
+    def guard(new: str, stored: str) -> bool:
+        seen.append((new, stored))
+        return True
+
+    replay([_q("a", "first"), _q("b", "second")], _vectors(0.9), threshold=0.85, guard=guard)
+    assert seen == [("second", "first")]
+
+
+def test_the_guard_isnt_asked_below_the_threshold():
+    def guard(new: str, stored: str) -> bool:
+        raise AssertionError("asked below the threshold")
+
+    assert replay([_q("a"), _q("b")], _vectors(0.5), threshold=0.85, guard=guard).hits == []
 
 
 def test_meaning_groups_follow_dup_of_to_the_original():
