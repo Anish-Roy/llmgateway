@@ -73,7 +73,7 @@ curl -sN localhost:8000/v1/chat/completions -H 'content-type: application/json' 
   -d '{"model": "demo-midstream", "stream": true, "messages": [{"role": "user", "content": "hi"}]}'
 ```
 
-For now only the mock provider streams. Groq and Gemini come next in Phase 3.
+Groq and the mock provider stream. Gemini streaming comes next in Phase 3.
 
 ## Layout
 

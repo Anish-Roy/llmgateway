@@ -182,6 +182,36 @@ One entry per phase: what was chosen, and why.
 - **The mock streams like OpenAI** (a role chunk, a word per chunk, a finish chunk, a usage
   chunk). Its `fail_after_chunks` option separates the two cases: 1 fails after the role chunk
   (still replaceable), 2 or more fails mid-answer. `demo-midstream` uses it.
-- **Until their adapters stream, Groq and Gemini return a provider-specific 400** for
-  `stream=True`. The router moves on to a provider that can stream, and the client gets an honest 400
-  if none can.
+- **Until its adapter streams, Gemini returns a provider-specific 400** for `stream=True`.
+  The router moves on to a provider that can stream, and the client gets an honest 400 if none
+  can.
+- **Groq's stream format was checked live (2026-10-25) before writing the adapter.**
+  - The first chunk is `role: assistant` with `content: ""`, as assumed above.
+  - Errors come before the stream starts, as normal JSON (404 `model_not_found`, 400 for a
+    bad `temperature`), so the existing error mapping is reused after reading the body.
+  - Without `include_usage`, usage is only inside `x_groq` on the finish chunk. With it, Groq
+    also sends OpenAI's `choices: []` usage chunk.
+  - `include_reasoning: true` streams `delta.reasoning` (plus a `channel` field) before the
+    content.
+- **The Groq adapter always sends `stream_options.include_usage: true`,** merged into whatever
+  `stream_options` the client sent. The SSE layer strips the usage chunk again for clients that
+  didn't ask. Phase 5 needs usage on every stream, and reading the standard chunk is simpler
+  than digging it out of `x_groq`.
+- **Vendor fields on chunks are dropped, as in non-streamed replies.** `x_groq` (request id,
+  timings, a second copy of usage) and `system_fingerprint` don't reach the client. Fields
+  inside `delta` (`tool_calls`, `reasoning`) are kept.
+- **Reasoning text counts as output for the commit point.** It's only streamed when the client
+  turned `include_reasoning` on, and then it's what they're waiting for. Holding it back until
+  the content starts would add the whole reasoning time to their time to first token, just to
+  keep the fallback window open a little longer.
+- **A Groq stream that closes without `[DONE]` is an error (502), not a normal end.** Otherwise a
+  dropped connection would look like a complete answer. An `{"error": ...}` event inside the
+  stream is a 502 too: the request was accepted, so the provider failed and another one may do
+  better. A timeout between chunks (the HTTP client's read timeout) is a 504.
+- **The SSE reader (`app/providers/sse.py`) is shared** by the adapters. It handles data split over
+  several lines and ignores comments, which are both valid SSE even though Groq doesn't send them.
+- **The live "done when" for Groq (2026-10-25):**
+  - The openai SDK with `stream=True` worked on `fast` and `strong`, with the first token in
+    0.5–0.65 s.
+  - `include_usage` returned the usage chunk.
+  - A client that disconnected after 5 chunks of a long story left no errors in the server log.

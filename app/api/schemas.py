@@ -67,9 +67,8 @@ class ChatChunk(BaseModel):
 
     `id`, `created` and `model` are the same on every chunk of a stream. The last chunk may
     carry `usage` with an empty `choices` list, as OpenAI sends with `include_usage`.
+    Top-level vendor fields (Groq's `x_groq`) are dropped, as in ChatResponse.
     """
-
-    model_config = ConfigDict(extra="allow")
 
     id: str
     object: Literal["chat.completion.chunk"] = "chat.completion.chunk"
@@ -79,11 +78,15 @@ class ChatChunk(BaseModel):
     usage: Usage | None = None
 
     def has_output(self) -> bool:
-        """True once the chunk carries something the client sees: text, a tool call or an end."""
-        return any(
-            c.delta.content or (c.delta.model_extra or {}).get("tool_calls") or c.finish_reason
-            for c in self.choices
-        )
+        """True once the chunk carries something the client sees: text, a tool call, reasoning
+        text (only sent when the client asked for it) or an end."""
+        for c in self.choices:
+            extra = c.delta.model_extra or {}
+            if c.delta.content or extra.get("tool_calls") or extra.get("reasoning"):
+                return True
+            if c.finish_reason:
+                return True
+        return False
 
 
 class Model(BaseModel):
