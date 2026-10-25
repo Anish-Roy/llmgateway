@@ -471,3 +471,16 @@ One entry per phase: what was chosen, and why.
   both set or both empty, which a check enforces.
 - **One index, on `(key_id, created_at)`:** the dashboard's query is one key over a time range.
   More can come with Phase 10, once its queries exist.
+- **Prices sit in `config/models.yaml`, keyed by `provider/model` like alias targets.** A price
+  belongs to a model on one provider (gpt-oss-20b on Groq), and the alias lists already name
+  them that way. The model actually served is what gets charged, so a fallback is billed at the
+  fallback model's price.
+- **The gateway won't start if a target has no price.** A missing price would quietly log every
+  call to that model as free. Mock targets are the exception: free unless listed.
+- **List prices, checked on 2026-10-25** (Groq's model page, Google's Gemini pricing page, paid
+  tier, text). Free-tier calls are logged at list price too, so the costs mean something.
+  gemini-3.8-flash is at an introductory price until 2026-12-31 and doubles on 2027-01-01. The
+  config has one price per model, not a schedule: the cost is saved with each row, so updating
+  the price on that date is enough, and older rows keep what they cost.
+- **Prices are `Decimal`.** Pydantic turns the YAML float `0.075` into exactly `Decimal("0.075")`
+  (it goes through the float's shortest string form), so the config stays plain numbers.

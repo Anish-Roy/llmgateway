@@ -6,6 +6,7 @@
 #            later entries are fallbacks, tried on timeouts, 429s and 5xx errors (not on a 400).
 #            The text after the first "/" is the provider's own model name, so it may contain
 #            more slashes.
+# pricing:   "provider/model" -> list price per 1M tokens. See the section at the end.
 
 # Model IDs checked on 2026-10-25 against each provider's model list, using our keys.
 # Providers retire models and change free-tier access often: recheck with
@@ -58,3 +59,24 @@ aliases:
   demo-midstream:
     - midstream/mock-model
     - mock/mock-model
+
+# List price in USD per 1M tokens, for every provider/model an alias uses (the gateway won't
+# start if one is missing). Mock targets are free unless listed. Free-tier calls are logged at
+# list price too, so the costs mean something. Output includes reasoning and thinking tokens.
+# Each call's cost is saved when it's logged, so changing a price here doesn't rewrite history.
+#
+# Checked on 2026-10-25: console.groq.com/docs/models, ai.google.dev/gemini-api/docs/pricing
+# (paid tier, text). gemini-3.8-flash goes up to 1.50 / 7.50 on 2027-01-01: update it then.
+pricing:
+  groq/openai/gpt-oss-20b:
+    input: 0.075
+    output: 0.30
+  groq/openai/gpt-oss-120b:
+    input: 0.15
+    output: 0.60
+  gemini/gemini-3.5-flash-lite:
+    input: 0.30
+    output: 2.50
+  gemini/gemini-3.8-flash:
+    input: 0.75
+    output: 3.75

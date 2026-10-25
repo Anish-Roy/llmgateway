@@ -1,10 +1,12 @@
 """Loading and validating config/models.yaml."""
 
+from decimal import Decimal
+
 import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.routing.registry import MockSpec, RegistryConfig, Target, load_registry
+from app.routing.registry import FREE, MockSpec, Price, RegistryConfig, Target, load_registry
 from tests.auth_helpers import authorize
 
 
@@ -21,6 +23,7 @@ def test_targets_are_parsed_from_provider_slash_model():
         {
             "providers": {"groq": {"type": "groq"}},
             "aliases": {"fast": ["groq/meta-llama/llama-4-scout"]},
+            "pricing": {"groq/meta-llama/llama-4-scout": {"input": 0.11, "output": 0.34}},
         }
     )
 
@@ -49,11 +52,59 @@ def test_mock_options_are_read():
         {"providers": {"m": {"type": "mock", "failure_rte": 1}}, "aliases": {}},
         # unknown provider type
         {"providers": {"x": {"type": "openai"}}, "aliases": {}},
+        # a paid target with no price: every call to it would be logged as free
+        {"providers": {"groq": {"type": "groq"}}, "aliases": {"fast": ["groq/gpt-oss"]}},
+        # a price for a provider that isn't defined
+        {"providers": {}, "aliases": {}, "pricing": {"groq/gpt-oss": {"input": 1, "output": 1}}},
+        # a negative price
+        {
+            "providers": {"groq": {"type": "groq"}},
+            "aliases": {"fast": ["groq/gpt-oss"]},
+            "pricing": {"groq/gpt-oss": {"input": -1, "output": 1}},
+        },
+        # typo in a price field
+        {
+            "providers": {"groq": {"type": "groq"}},
+            "aliases": {"fast": ["groq/gpt-oss"]},
+            "pricing": {"groq/gpt-oss": {"inptu": 1, "output": 1}},
+        },
     ],
 )
 def test_invalid_registry_is_rejected(data):
     with pytest.raises(ValidationError):
         RegistryConfig.model_validate(data)
+
+
+def test_shipped_registry_prices_every_target():
+    config = load_registry(Settings(_env_file=None).models_file)
+
+    for targets in config.aliases.values():
+        for t in targets:
+            config.price(t)  # raises if a paid target has no price
+    # A YAML float becomes the exact decimal it's written as, not 0.07499999...
+    assert config.price(Target(provider="groq", model="openai/gpt-oss-20b")) == Price(
+        input=Decimal("0.075"), output=Decimal("0.30")
+    )
+
+
+def test_mock_targets_are_free_unless_priced():
+    config = RegistryConfig.model_validate(
+        {
+            "providers": {"mock": {"type": "mock"}, "pricey": {"type": "mock"}},
+            "aliases": {"m": ["mock/mock-model", "pricey/mock-model"]},
+            "pricing": {"pricey/mock-model": {"input": 1, "output": 2}},
+        }
+    )
+
+    assert config.price(Target(provider="mock", model="mock-model")) == FREE
+    assert config.price(Target(provider="pricey", model="mock-model")) == Price(input=1, output=2)
+
+
+def test_price_of_an_unpriced_paid_target_is_an_error():
+    config = RegistryConfig.model_validate({"providers": {"groq": {"type": "groq"}}, "aliases": {}})
+
+    with pytest.raises(KeyError):
+        config.price(Target(provider="groq", model="gpt-oss"))
 
 
 def test_providers_without_a_key_are_not_built(monkeypatch):

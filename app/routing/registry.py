@@ -1,5 +1,7 @@
-"""The model registry: which providers exist, and which provider/model pairs serve each alias."""
+"""The model registry: which providers exist, which provider/model pairs serve each alias, and
+what each pair costs."""
 
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -67,11 +69,26 @@ def _parse_target(value: Any) -> Any:
 TargetRef = Annotated[Target, BeforeValidator(_parse_target)]
 
 
+class Price(BaseModel):
+    """List price in USD per 1M tokens. Decimal, so 0.075 stays exactly 0.075."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    input: Decimal = Field(ge=0)
+    # Includes reasoning and thinking tokens: providers bill them as output.
+    output: Decimal = Field(ge=0)
+
+
+FREE = Price(input=Decimal(0), output=Decimal(0))
+
+
 class RegistryConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     providers: dict[str, ProviderSpec]
     aliases: dict[str, Annotated[list[TargetRef], Field(min_length=1)]]
+    # "provider/model" -> price, keyed like alias targets. Mock targets may leave theirs out.
+    pricing: dict[str, Price] = {}
 
     @model_validator(mode="after")
     def _targets_name_known_providers(self) -> "RegistryConfig":
@@ -80,6 +97,33 @@ class RegistryConfig(BaseModel):
                 if t.provider not in self.providers:
                     raise ValueError(f"alias {alias!r} uses undefined provider {t.provider!r}")
         return self
+
+    @model_validator(mode="after")
+    def _every_paid_target_has_a_price(self) -> "RegistryConfig":
+        # A missing price would log every call to that model as free, and nobody would notice.
+        for key in self.pricing:
+            provider = _parse_target(key)["provider"]
+            if provider not in self.providers:
+                raise ValueError(f"pricing entry {key!r} uses undefined provider {provider!r}")
+        for alias, targets in self.aliases.items():
+            for t in targets:
+                if f"{t.provider}/{t.model}" not in self.pricing and not self._is_mock(t):
+                    raise ValueError(
+                        f"alias {alias!r} uses {t.provider}/{t.model}, which has no price"
+                    )
+        return self
+
+    def price(self, target: Target) -> Price:
+        """What `target` costs. Mock targets without an entry are free."""
+        price = self.pricing.get(f"{target.provider}/{target.model}")
+        if price is not None:
+            return price
+        if self._is_mock(target):
+            return FREE
+        raise KeyError(f"no price for {target.provider}/{target.model}")
+
+    def _is_mock(self, target: Target) -> bool:
+        return isinstance(self.providers[target.provider], MockSpec)
 
 
 def load_registry(path: Path) -> RegistryConfig:
