@@ -533,3 +533,28 @@ One entry per phase: what was chosen, and why.
   - An unknown model (404) and the second request on a 1-RPM key (429): `rejected`,
     0 attempts, $0.
   - The server log had only the warnings the demos are meant to cause, and no failed writes.
+
+## Phase 6: exact-match cache
+
+- **One cache for every API key.** An exact hit is the same answer to the same request, so
+  sharing leaks nothing a key couldn't get by sending that request itself, and it raises the
+  hit rate. The semantic cache (Phase 7) answers *similar* prompts, which is riskier to share
+  across teams: that gets its own decision.
+- **The key hashes the whole forwarded request, not only alias + messages + temperature +
+  max_tokens** (the plan's list). `ChatRequest` forwards fields it doesn't model (tools,
+  response_format, stop, seed, top_p, a message's name), and each can change the answer: with
+  the plan's four, a request with tools could get the answer to one without. Only `stream`,
+  `stream_options` and `user` are left out, since the model never sees them. So a streamed and
+  a plain request for the same thing share an entry.
+- **Canonical JSON, then SHA-256.** Sorted keys and no spaces, so key order in a client's JSON
+  doesn't matter; a null field counts as a missing one; `temperature` is a float field, so 0
+  and 0.0 match. Other numbers aren't normalised (`top_p: 1` and `1.0` are different keys):
+  that costs a miss, never a wrong answer. A version prefix in the hashed text lets a future
+  change to the key retire old entries instead of mismatching them.
+- **Only requests with a temperature at or below `CACHE_MAX_TEMPERATURE` (default 0.2) are
+  cached.** Without a temperature the provider's default applies (1.0 on most), so answers are
+  meant to vary. 0.2 rather than 0: low temperatures are what clients set when they want
+  stable answers, and one stored sample is a fair answer to them. Requests asking for several
+  choices (`n` > 1) aren't cached either.
+- **`x-gateway-cache: off` (any case) skips the cache both ways:** no lookup, no store. Any
+  other value keeps it on, so a typo never silently turns caching off.

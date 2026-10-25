@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BeforeValidator, SecretStr
+from pydantic import BeforeValidator, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # Tokens reserved for the reply when a request sets no max_tokens, until the real usage
     # is known. Higher is stricter on keys that send many such requests at once.
     rate_limit_default_completion_tokens: int = 1024
+
+    # The exact-match cache answers only requests whose temperature is set and at most this.
+    # Above it, answers are meant to vary. 0 caches only fully greedy requests.
+    cache_max_temperature: float = Field(default=0.2, ge=0, le=2)
 
     # Model aliases and the providers behind them. See config/models.yaml.
     models_file: Path = Path(__file__).resolve().parent.parent / "config" / "models.yaml"
