@@ -147,8 +147,14 @@ ever served its own entries: a semantic hit answers a different question, which 
 another team's details. A miss adds about 25 ms (embedding plus the lookup) to the provider
 call.
 
+The model (about 90 MB) downloads from Hugging Face on the first start and is cached after.
+Loading it adds about 12 s to startup and about 430 MB of memory; `SEMANTIC_CACHE_ENABLED=false`
+skips it, and so does a model that fails to load (the gateway logs a warning and runs with the
+exact cache alone).
+
 **Measured** by replaying `data/queries.jsonl` (378 prompts, 96 near-duplicates, 48 look-alike
-"trap" pairs) through `scripts/eval_semantic_cache.py`:
+"trap" pairs) through `uv run python -m scripts.eval_semantic_cache` (it writes the chart and
+`docs/semantic_threshold.csv`):
 
 | Threshold 0.95, with the numbers guard | |
 |---|---|

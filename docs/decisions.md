@@ -843,3 +843,36 @@ One entry per phase: what was chosen, and why.
   model lowercases, so it's the "?" that costs 0.04. Normalising punctuation before
   embedding might raise the hit rate, but it would change what the threshold was measured
   on. If it's tried, it goes through the experiment first.
+- **Phase 7 "done when": a chart and a defended threshold (2026-10-25).**
+  - **The chart:** `docs/semantic_threshold.png`, with the table in
+    `docs/semantic_threshold.csv`. Hit rate and false-hit rate from 0.80 to 0.97, for MiniLM
+    alone and with the numbers guard, against the best possible 25.4%. A rerun of
+    `scripts/eval_semantic_cache.py` reproduces both files byte for byte.
+  - **The threshold, and how it's defended.** The rule set before the first run (no false
+    hits at or above the threshold) picked nothing: no setup tried reaches zero wrong answers,
+    because embeddings can't see word order ("string to integer" vs "integer to string":
+    0.996). A cross-encoder check did worse. That result *is* the defence: the semantic cache
+    is opt-in, at 0.95 with the numbers guard, and the README states what a client opting in
+    gets: 7.1% hits, 4 of 27 wrong (14.8%). 0.95 sits where the wrong-answer count gets low
+    before the hit rate falls off (4.5% at 0.96). It was the user's choice among measured
+    options, not the rule's pick.
+  - **Each build item in the plan, and where it is:**
+    - embed the user message with all-MiniLM-L6-v2: `app/cache/embedder.py`;
+    - a pgvector table with an HNSW index: migration 004;
+    - lookup order exact, semantic, provider: `app/api/routes.py`;
+    - single-turn only, stated in the README: `embed_text`, and the README's semantic section;
+    - the threshold experiment, with traps: `scripts/eval_semantic_cache.py`.
+  - **Where it goes beyond the plan:**
+    - **Context:** the plan matched on alias and system prompt; the gateway matches the
+      whole context (every option the model sees).
+    - **Scope:** entries are scoped per API key.
+    - **Guard:** a numbers guard runs on top of the threshold.
+    - **Opt-in:** the semantic cache is opt-in instead of always on.
+  - **Checked live** (step 5): semantic hits plain and streamed in about 33 ms at $0; a 0.942
+    pair missed; a trap pair (miles/km) was served the wrong answer, as measured.
+  - **Tests:** 549 pass, without the real model or a network.
+    - **Model:** one test uses MiniLM when it's already cached locally.
+    - **Database:** the store and route tests run against Postgres when it's up.
+- **For Phase 11:** the replay should send `x-gateway-cache: semantic` in its cache modes, or
+  the semantic cache saves nothing. It should report semantic hits apart from exact ones,
+  since only those can be wrong.
