@@ -101,7 +101,9 @@ One entry per phase: what was chosen, and why.
 - **`strong` puts Groq first, because live testing said so.** gemini-3.8-flash timed out on
   5 of 6 calls and gave a 503 "high demand" on the sixth, so with it first every `strong`
   request waited 30 s before falling back. Fallback hid the outage, but only by adding latency.
-  A per-provider timeout or Phase 3's time-to-first-token fallback would cut that wait.
+  A shorter per-provider timeout, or for streams a separate time-to-first-token timeout,
+  would cut that wait. Phase 3 doesn't add one: a stream's first read still waits up to the
+  30 s HTTP timeout before falling back.
 - **Groq provider options `reasoning_effort` and `include_reasoning`, applied only when the
   client didn't send them.** gpt-oss reasons before answering, and the reasoning counts
   against `max_tokens`. At Groq's default effort, a 50-token request came back with an empty
@@ -238,8 +240,9 @@ One entry per phase: what was chosen, and why.
 - **`to_gemini` accepts `stream_options` instead of rejecting it.** It was on the "unsupported
   extras" path, so every client sending `include_usage` would have skipped Gemini with a
   provider-specific 400.
-- **Both adapters now share the same building blocks:** `_check_key`, `_headers` and a
-  `_transport_errors()` context manager. The context manager wraps the request and, for
+- **Both adapters are now built the same way:** each has its own `_check_key`, `_headers`
+  and `_transport_errors()` context manager. These are copies rather than shared code, because
+  the messages name the provider. The context manager wraps the request and, for
   streams, every read, so a timeout between events is a 504 there too.
 - **The live "done when" for Gemini (2026-10-25)** used a scratch registry (`MODELS_FILE`),
   because Gemini is second in both aliases and never streams while Groq is up.
