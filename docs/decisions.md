@@ -453,3 +453,21 @@ One entry per phase: what was chosen, and why.
     check showed it with a smaller key.
   - Offline, `tests/test_auth.py` and `tests/test_rate_limit_http.py` cover the 401s and 429s
     through the openai SDK.
+
+## Phase 5: usage logging and cost
+
+- **Which requests get a row: every chat-completions request that gets past auth.** That's
+  replies, streams, fallbacks, every provider failing, and the gateway's own 429s and 404s.
+  A 401 has no key to charge. A body the gateway can't parse is rejected before the route
+  runs and costs nothing. `/v1/models` calls no provider.
+- **`request_logs` stores the status code and an `outcome`.** A stream that fails partway was
+  already sent as a 200, so the status alone would count it as a success. The outcomes are
+  `StreamRecord`'s four, plus `rejected` for a request refused before any provider call.
+- **`cost_usd` is `numeric(14, 10)`, not a float.** The dashboard sums thousands of tiny costs,
+  and a float sum would drift. 10 decimal places hold one token at $0.02 per 1M (2e-8). A test
+  adds that cost a thousand times and checks the sum exactly.
+- **`cache_status` and `attempts` have defaults (`miss`, 0),** so Phases 6 and 7 only fill in
+  `cache_status`, and a refused request needs no provider columns. `provider` and `model` are
+  both set or both empty, which a check enforces.
+- **One index, on `(key_id, created_at)`:** the dashboard's query is one key over a time range.
+  More can come with Phase 10, once its queries exist.

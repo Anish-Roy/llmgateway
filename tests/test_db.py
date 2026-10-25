@@ -1,5 +1,7 @@
 """Schema migrations and the connection pool, against a real Postgres (skipped without one)."""
 
+from decimal import Decimal
+
 import psycopg
 import pytest
 
@@ -29,6 +31,7 @@ def test_schema_files_run_in_name_order():
 
     assert names == sorted(names)
     assert "001_api_keys.sql" in names
+    assert "002_request_logs.sql" in names
 
 
 def test_migrations_create_the_api_keys_table(pg_conninfo):
@@ -99,6 +102,80 @@ def test_a_key_hash_is_stored_once(pg_conninfo):
 
         with pytest.raises(psycopg.errors.UniqueViolation):
             _insert_key(conn, name="other")
+
+
+def _insert_log(conn: psycopg.Connection, **overrides) -> None:
+    # The fewest columns a row needs; everything else has a default.
+    row = {
+        "key_id": conn.execute("SELECT id FROM api_keys").fetchone()[0],
+        "requested_model": "fast",
+        "stream": False,
+        "status_code": 200,
+        "outcome": "completed",
+        "latency_ms": 120,
+    } | overrides
+    columns = ", ".join(row)
+    values = ", ".join(f"%({c})s" for c in row)
+    conn.execute(f"INSERT INTO request_logs ({columns}) VALUES ({values})", row)
+
+
+def test_request_log_defaults(pg_conninfo):
+    with psycopg.connect(pg_conninfo) as conn:
+        apply_migrations(conn)
+        _insert_key(conn)
+        _insert_log(conn)
+
+        row = conn.execute(
+            "SELECT provider, model, prompt_tokens, completion_tokens, usage_estimated,"
+            " ttft_ms, cost_usd, cache_status, attempts, fallback FROM request_logs"
+        ).fetchone()
+
+    assert row == (None, None, 0, 0, False, None, Decimal(0), "miss", 0, False)
+
+
+def test_request_log_cost_is_exact(pg_conninfo):
+    with psycopg.connect(pg_conninfo) as conn:
+        apply_migrations(conn)
+        _insert_key(conn)
+        # One token at $0.02 per 1M, a thousand times: a float sum would drift.
+        for _ in range(1000):
+            _insert_log(conn, cost_usd=Decimal("0.00000002"))
+
+        total = conn.execute("SELECT sum(cost_usd) FROM request_logs").fetchone()[0]
+
+    assert total == Decimal("0.00002")
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"outcome": "ok"},
+        {"cache_status": "fuzzy"},
+        {"status_code": 42},
+        {"prompt_tokens": -1},
+        {"latency_ms": -5},
+        {"cost_usd": Decimal("-0.01")},
+        # A provider without a model (or the other way round) is half a row.
+        {"provider": "groq"},
+        {"model": "openai/gpt-oss-20b"},
+    ],
+)
+def test_bad_request_logs_are_rejected(pg_conninfo, overrides):
+    with psycopg.connect(pg_conninfo) as conn:
+        apply_migrations(conn)
+        _insert_key(conn)
+
+        with pytest.raises(psycopg.errors.CheckViolation):
+            _insert_log(conn, **overrides)
+
+
+def test_request_logs_need_a_real_key(pg_conninfo):
+    with psycopg.connect(pg_conninfo) as conn:
+        apply_migrations(conn)
+        _insert_key(conn)
+
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            _insert_log(conn, key_id=999_999)
 
 
 async def test_pool_opens_and_runs_queries(pg_conninfo):
