@@ -8,8 +8,5 @@ __pycache__/
 
 .env
 
-docs/
-docker/
-
 plan.md
 project.md
