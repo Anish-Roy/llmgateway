@@ -14,7 +14,20 @@ dependencies = [
     "tiktoken>=0.14.0",
     "psycopg[binary]>=3.3.6",
     "psycopg-pool>=3.3.3",
+    "torch>=2.5",
+    "sentence-transformers>=6.2",
+    "numpy>=2.0",
 ]
+
+# torch comes from PyTorch's CPU-only index. From PyPI, Linux gets the CUDA build: several GB
+# of GPU libraries a gateway that embeds one short message at a time never uses.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
 
 [dependency-groups]
 dev = [

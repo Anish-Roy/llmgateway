@@ -657,3 +657,39 @@ One entry per phase: what was chosen, and why.
   - Not checked live: a Gemini answer through the cache. Its adapter maps Gemini's finish
     reasons to `stop` and `length`, which `storable` accepts, and nothing else in the cache
     depends on the provider.
+
+## Phase 7: semantic cache
+
+- **torch comes from PyTorch's CPU-only index** (`[tool.uv.sources]` in pyproject.toml). From
+  PyPI, Linux gets the CUDA build, which adds several GB of GPU libraries. The CPU build is
+  711 MB installed, with no `nvidia-*` packages in the lock file. That size decides whether the
+  Phase 12 image fits a free tier, and the gateway embeds one short message per request, which
+  a CPU does in milliseconds.
+- **Only single-turn requests are embedded, for now:** an optional system (or developer)
+  message, then one user message with text, and no `tools` or `functions`. `embed_text` makes
+  that call and returns the user message, stripped. A later turn ("and in Rust?") means
+  nothing without the turns before it, and one embedded message can't show them. Requests
+  that aren't single-turn skip the semantic cache and can still hit the exact cache.
+- **One function decides what's embedded, for the gateway and the experiment.** The threshold
+  experiment calls `embed_text` too, so the threshold it picks is measured on exactly what the
+  gateway embeds.
+- **Vectors are normalised at encoding** (`normalize_embeddings=True`), so cosine similarity
+  is a dot product, and pgvector's cosine distance is 1 - similarity.
+- **The model loads and warms up at startup, in a thread.** Measured on this laptop (8 cores):
+  - startup cost: about 11 to 13 s, most of it importing torch, plus about 1.4 s for Hugging
+    Face to check for a newer model revision;
+  - memory: peak RSS goes from 81 MB to about 510 MB;
+  - per request: 12 ms p50, 17 to 22 ms p95 for one prompt from the query log.
+
+  Loading at first use would put those seconds on a client's request. The warm-up embeds one
+  text, because the first call is far slower than the rest.
+- **A model that can't load turns the semantic cache off; it doesn't stop the gateway.** A
+  first start with no network can't download the model. The gateway logs a warning and
+  serves every request with the exact cache alone, the same rule as Phase 6: the cache never
+  fails a request. `SEMANTIC_CACHE_ENABLED=false` skips loading entirely.
+- **Tests never load the model.** conftest gives apps a `FakeEmbedder`, which returns vectors
+  the test sets for chosen texts and a hash-seeded random unit vector for any other text.
+  Random 384-dimension vectors are nearly orthogonal, so unrelated texts never look similar
+  by accident. One test runs the real model, only when it's already in the local Hugging
+  Face cache: it checks that "capital of france?" is closer to "What's the capital of
+  France?" than "capital of Germany?" is. CI never downloads it.

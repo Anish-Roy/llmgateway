@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # How long a cached answer is served. Longer saves more, but a provider's model can change
     # under the same name, and a stale answer keeps being served until it expires.
     cache_ttl_s: float = Field(default=86_400, gt=0)
+    # The semantic cache answers a question similar enough to one already answered. Off, the
+    # embedding model is never loaded: startup is ~11 s faster and the process ~430 MB smaller.
+    semantic_cache_enabled: bool = True
 
     # Model aliases and the providers behind them. See config/models.yaml.
     models_file: Path = Path(__file__).resolve().parent.parent / "config" / "models.yaml"

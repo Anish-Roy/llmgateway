@@ -6,6 +6,7 @@ import pytest
 from psycopg.conninfo import make_conninfo
 
 import app.main
+from app.cache.embedder import FakeEmbedder
 from app.cache.store import NoCacheStore
 from app.config import Settings
 from app.usage import tokens
@@ -19,6 +20,13 @@ def _no_tokenizer_download(monkeypatch):
     # test sets an encoding itself.
     monkeypatch.setattr(app.main, "load_encoding_in_background", lambda: None)
     monkeypatch.setattr(tokens, "_encoding", None)
+
+
+@pytest.fixture(autouse=True)
+def _no_model_download(monkeypatch):
+    # Tests never load the embedding model (a 90 MB download, then seconds of torch): apps
+    # started with their lifespan get a fake that embeds by hash.
+    monkeypatch.setattr(app.main, "load_embedder", FakeEmbedder)
 
 
 @pytest.fixture(autouse=True)

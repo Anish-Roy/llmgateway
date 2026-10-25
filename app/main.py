@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -11,6 +12,7 @@ from app.api.routes import router
 from app.auth.authenticator import Authenticator
 from app.auth.keys import PostgresKeyStore
 from app.auth.rate_limit import RateLimiter
+from app.cache.embedder import Embedder, load_embedder
 from app.cache.store import NoCacheStore, PostgresCacheStore, ResponseCache
 from app.config import Settings, get_settings
 from app.db.pool import open_pool
@@ -70,6 +72,20 @@ def build_providers(
     return providers
 
 
+async def start_embedder(settings: Settings) -> Embedder | None:
+    """The semantic cache's embedding model, loaded and warmed up, or None when the semantic
+    cache is off or the model can't load. A gateway without it still serves every request,
+    with the exact cache alone."""
+    if not settings.semantic_cache_enabled:
+        return None
+    try:
+        # Seconds of CPU (importing torch, reading the model): kept off the event loop.
+        return await asyncio.to_thread(load_embedder)
+    except Exception:
+        logger.warning("could not load the embedding model: semantic cache off", exc_info=True)
+        return None
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     # The app's own loggers (uvicorn configures only its own). Without a handler, Python shows
@@ -84,6 +100,7 @@ def create_app() -> FastAPI:
         config = load_registry(settings.models_file)
         # For estimating usage when a stream ends early. Never blocks startup.
         load_encoding_in_background()
+        app.state.embedder = await start_embedder(settings)
         # One pooled HTTP client for all provider calls, and one Postgres pool (API keys,
         # request logs, and the caches later). Both closed on shutdown.
         async with (
@@ -127,6 +144,8 @@ def create_app() -> FastAPI:
     # Replaced at startup by the Postgres cache. Until then nothing is cached, so tests that
     # repeat a request keep calling the provider unless they give the app a cache themselves.
     app.state.response_cache = ResponseCache(NoCacheStore(), ttl_s=settings.cache_ttl_s)
+    # Loaded at startup, if the semantic cache is on.
+    app.state.embedder = None
     install_error_handlers(app)
     app.include_router(router)
 
