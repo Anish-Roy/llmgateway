@@ -4,8 +4,16 @@ import time
 
 import pytest
 
-from app.api.schemas import ChatRequest
-from app.guardrails.pii import find_pii, luhn_valid, mask_request, verhoeff_valid
+from app.api.schemas import ChatMessage, ChatRequest, ChatResponse, Choice
+from app.guardrails.pii import (
+    StreamRestorer,
+    find_pii,
+    luhn_valid,
+    mask_request,
+    restore,
+    restore_response,
+    verhoeff_valid,
+)
 
 # Pass their checksums: Verhoeff for the Aadhaar numbers, Luhn for the cards.
 AADHAAR = "234567890124"
@@ -255,3 +263,102 @@ def test_long_texts_take_linear_time(text):
     find_pii(text)
     # About 0.03 s each; quadratic took seconds at this size.
     assert time.perf_counter() - started < 1
+
+
+# Restoring.
+
+VALUES = {"[EMAIL_1]": "a@b.com", "[EMAIL_2]": "c@d.org", "[PHONE_1]": "98765 43210"}
+
+
+def test_restore_puts_the_values_back():
+    text = "Write to [EMAIL_1], cc [EMAIL_2], or call [PHONE_1]. [EMAIL_1] again."
+    assert restore(text, VALUES) == (
+        "Write to a@b.com, cc c@d.org, or call 98765 43210. a@b.com again."
+    )
+
+
+def test_restore_leaves_unknown_placeholders_and_lookalikes():
+    text = "[EMAIL_3] [PHONE_2] [CARD_1] [EMAIL_1 ] [email_1] [EMAIL_]"
+    assert restore(text, VALUES) == text
+
+
+def test_restore_without_values_is_a_no_op():
+    assert restore("[EMAIL_1]", {}) == "[EMAIL_1]"
+
+
+def test_mask_then_restore_round_trips():
+    original = f"Mail priya@x.in, call +91 98765 43210, card {VISA}, aadhaar {AADHAAR}."
+    masked = mask_request(_request(original))
+    assert restore(masked.request.messages[0].content, masked.values) == original
+
+
+def _response(*contents: str | None) -> ChatResponse:
+    return ChatResponse(
+        model="m",
+        choices=[
+            Choice(index=i, message=ChatMessage(role="assistant", content=c))
+            for i, c in enumerate(contents)
+        ],
+    )
+
+
+def test_restore_response_returns_a_restored_copy():
+    stored = _response("Sent to [EMAIL_1].", None)
+    restored = restore_response(stored, VALUES)
+    assert [c.message.content for c in restored.choices] == ["Sent to a@b.com.", None]
+    # The original, which a cache may hold, keeps its placeholders.
+    assert stored.choices[0].message.content == "Sent to [EMAIL_1]."
+    assert restored.id == stored.id
+
+
+def test_restore_response_without_values_is_the_same_response():
+    stored = _response("hi")
+    assert restore_response(stored, {}) is stored
+
+
+def _streamed(restorer: StreamRestorer, deltas: list[str]) -> list[str]:
+    return [restorer.feed(d) for d in deltas] + [restorer.flush()]
+
+
+STREAMED = "To [EMAIL_1] and [PHONE_1]: hi [EMAIL_2]! [x] [EMAIL_9] [EMA"
+
+
+@pytest.mark.parametrize("cut", range(len(STREAMED) + 1))
+def test_a_stream_split_anywhere_restores_like_the_whole_text(cut):
+    sent = _streamed(StreamRestorer(VALUES), [STREAMED[:cut], STREAMED[cut:]])
+    assert "".join(sent) == restore(STREAMED, VALUES)
+
+
+def test_a_stream_a_character_at_a_time_restores_like_the_whole_text():
+    sent = _streamed(StreamRestorer(VALUES), list(STREAMED))
+    assert "".join(sent) == restore(STREAMED, VALUES)
+    # Nothing leaks half a placeholder: each one arrives whole.
+    assert "a@b.com" in sent and "98765 43210" in sent
+
+
+def test_a_split_placeholder_is_held_until_it_closes():
+    restorer = StreamRestorer(VALUES)
+    assert restorer.feed("Mail [EM") == "Mail "
+    assert restorer.feed("AIL_") == ""
+    assert restorer.feed("1] now") == "a@b.com now"
+
+
+def test_text_that_cant_become_a_placeholder_isnt_held():
+    restorer = StreamRestorer(VALUES)
+    assert restorer.feed("see [x") == "see [x"
+    assert restorer.feed("list[0") == "list[0"
+    # [EMAIL_9] isn't one of this request's.
+    assert restorer.feed("[EMAIL_9") == "[EMAIL_9"
+
+
+def test_an_unfinished_tail_is_flushed_as_it_is():
+    restorer = StreamRestorer(VALUES)
+    assert restorer.feed("cut [EMAIL_") == "cut "
+    assert restorer.flush() == "[EMAIL_"
+    assert restorer.flush() == ""
+
+
+def test_a_restorer_without_values_passes_text_through():
+    restorer = StreamRestorer({})
+    assert restorer.feed("[EMA") == "[EMA"
+    assert restorer.flush() == ""

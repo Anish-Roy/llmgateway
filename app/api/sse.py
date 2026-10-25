@@ -4,6 +4,10 @@ Each chunk is a `data: {json}` event, and a finished stream ends with `data: [DO
 after the first chunk can't change the status code any more (the 200 is already sent), so it
 becomes an error event, `data: {"error": {...}}`, and the stream ends without `[DONE]`. The
 openai SDK raises that event as an `APIError`.
+
+The chunks come with the request's PII masked; the client gets them with the real values back
+(`values`, from app/guardrails/pii.py). Restored chunks are new objects: the router's record of
+the stream, which the caches store from, keeps the placeholders.
 """
 
 import logging
@@ -16,6 +20,7 @@ from starlette.types import Receive, Scope, Send
 
 from app.api.errors import error_body
 from app.api.schemas import ChatChunk, ChatResponse, ChunkChoice, Delta
+from app.guardrails.pii import StreamRestorer
 from app.providers.base import ProviderError
 from app.routing.router import RoutedStream, StreamRecord
 
@@ -57,10 +62,12 @@ def sse_response(
     *,
     include_usage: bool,
     headers: Mapping[str, str],
+    values: dict[str, str],
     on_finish: Callable[[StreamRecord], None] | None = None,
 ) -> StreamingResponse:
     """`on_finish` gets the stream's complete record once the stream is closed, however it
-    ended (finished, failed, or the client left)."""
+    ended (finished, failed, or the client left). `values` are the request's masked PII, put
+    back in the text the client gets."""
 
     async def close() -> None:
         try:
@@ -70,15 +77,21 @@ def sse_response(
                 on_finish(stream.record)
 
     return _ClosingStreamingResponse(
-        _events(stream, include_usage, stream.target.provider), close, {**SSE_HEADERS, **headers}
+        _events(stream, include_usage, stream.target.provider, values),
+        close,
+        {**SSE_HEADERS, **headers},
     )
 
 
 def sse_replay(
-    stored: ChatResponse, *, include_usage: bool, headers: Mapping[str, str]
+    stored: ChatResponse,
+    *,
+    include_usage: bool,
+    headers: Mapping[str, str],
+    values: dict[str, str],
 ) -> StreamingResponse:
     """A stored answer sent as a stream, for a cache hit: the same events a provider's stream
-    would have produced, all at once."""
+    would have produced, all at once, with this request's PII `values` put back."""
 
     async def chunks() -> AsyncIterator[ChatChunk]:
         for chunk in replay_chunks(stored):
@@ -88,7 +101,9 @@ def sse_replay(
         pass
 
     return _ClosingStreamingResponse(
-        _events(chunks(), include_usage, "cache"), nothing_to_close, {**SSE_HEADERS, **headers}
+        _events(chunks(), include_usage, "cache", values),
+        nothing_to_close,
+        {**SSE_HEADERS, **headers},
     )
 
 
@@ -112,9 +127,10 @@ def replay_chunks(stored: ChatResponse) -> Iterable[ChatChunk]:
 
 
 async def _events(
-    chunks: AsyncIterator[ChatChunk], include_usage: bool, source: str
+    chunks: AsyncIterator[ChatChunk], include_usage: bool, source: str, values: dict[str, str]
 ) -> AsyncIterator[str]:
     """`source` names where the chunks come from (a provider, or the cache) in logs."""
+    restorer = _Restorer(values)
     try:
         async for chunk in chunks:
             if not chunk.choices and not include_usage:
@@ -122,19 +138,70 @@ async def _events(
                 # (stream_options.include_usage), as OpenAI does. Clients that read
                 # chunk.choices[0] would crash on it otherwise.
                 continue
-            # Usage on a chunk with choices is a provider's running total, kept for the
-            # gateway's own records. OpenAI sends usage only on the final chunk.
-            exclude = {"usage"} if chunk.choices else None
-            yield _event(chunk.model_dump_json(exclude_none=True, exclude=exclude))
+            yield _chunk_event(restorer.restore(chunk))
     except ProviderError as e:
         logger.warning("%s failed mid-stream: %s %s", source, e.status, e.message)
+        for chunk in restorer.rest():
+            yield _chunk_event(chunk)
         yield _event(error_body(e.status, e.message, e.type, e.param, e.code).model_dump_json())
         return
     except Exception:
         logger.exception("unhandled error mid-stream")
+        for chunk in restorer.rest():
+            yield _chunk_event(chunk)
         yield _event(error_body(500, "Internal gateway error", "server_error").model_dump_json())
         return
+    for chunk in restorer.rest():
+        yield _chunk_event(chunk)
     yield _event("[DONE]")
+
+
+class _Restorer:
+    """Puts the request's PII back in a stream's text, one `StreamRestorer` per choice.
+
+    A choice's held-back tail is sent with its finish_reason. One a stream ended (or failed)
+    without is sent by `rest`, as one more chunk per choice.
+    """
+
+    def __init__(self, values: dict[str, str]) -> None:
+        self._values = values
+        self._choices: dict[int, StreamRestorer] = {}
+        self._last: ChatChunk | None = None
+
+    def restore(self, chunk: ChatChunk) -> ChatChunk:
+        if not self._values or not chunk.choices:
+            return chunk
+        self._last = chunk
+        choices = []
+        for choice in chunk.choices:
+            restorer = self._choices.setdefault(choice.index, StreamRestorer(self._values))
+            content = choice.delta.content
+            text = restorer.feed(content or "")
+            if choice.finish_reason:
+                text += restorer.flush()
+            if text or content is not None:
+                delta = choice.delta.model_copy(update={"content": text})
+                choice = choice.model_copy(update={"delta": delta})
+            choices.append(choice)
+        return chunk.model_copy(update={"choices": choices})
+
+    def rest(self) -> list[ChatChunk]:
+        if self._last is None:
+            return []
+        meta = {"id": self._last.id, "created": self._last.created, "model": self._last.model}
+        held = {i: r.flush() for i, r in self._choices.items()}
+        return [
+            ChatChunk(**meta, choices=[ChunkChoice(index=i, delta=Delta(content=text))])
+            for i, text in held.items()
+            if text
+        ]
+
+
+def _chunk_event(chunk: ChatChunk) -> str:
+    # Usage on a chunk with choices is a provider's running total, kept for the gateway's own
+    # records. OpenAI sends usage only on the final chunk.
+    exclude = {"usage"} if chunk.choices else None
+    return _event(chunk.model_dump_json(exclude_none=True, exclude=exclude))
 
 
 def _event(data: str) -> str:

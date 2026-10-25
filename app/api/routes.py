@@ -22,7 +22,7 @@ from app.cache.key import CACHE_HEADER, storable
 from app.cache.semantic import SEMANTIC
 from app.cache.semantic_store import SemanticCache, SemanticLookup
 from app.cache.store import CacheEntry, ResponseCache
-from app.guardrails.pii import mask_request
+from app.guardrails.pii import mask_request, restore_response
 from app.routing.registry import Target
 from app.routing.router import ModelRouter, RoutedStream
 from app.usage.recorder import Recording, UsageRecorder
@@ -81,7 +81,10 @@ async def chat_completions(
 
     # PII is masked before anything else sees the request: from here on the caches (their
     # keys and what they store), the providers and token estimates get placeholders only.
-    body = mask_request(body).request
+    # Only what's sent to the client gets the real values back, in copies: the objects the
+    # caches store keep the placeholders.
+    masked = mask_request(body)
+    body, values = masked.request, masked.values
 
     # Both kinds of request share entries: the key leaves `stream` out. None when the request
     # isn't cacheable or the client turned the cache off.
@@ -111,9 +114,11 @@ async def chat_completions(
         recording.cached(entry, hit_status)
         headers = {**_cache_hit_headers(entry, hit_status), **limit_headers}
         if body.stream:
-            return sse_replay(entry.response, include_usage=_wants_usage(body), headers=headers)
+            return sse_replay(
+                entry.response, include_usage=_wants_usage(body), headers=headers, values=values
+            )
         response.headers.update(headers)
-        return _served_again(entry.response)
+        return restore_response(_served_again(entry.response), values)
     cache_status = "miss" if cache_key is not None else "bypass"
 
     def keep(answer: ChatResponse, target: Target, usage: Usage) -> None:
@@ -136,6 +141,7 @@ async def chat_completions(
             stream,
             include_usage=_wants_usage(body),
             headers={**headers, **limit_headers, CACHE_HEADER: cache_status},
+            values=values,
             on_finish=lambda _: _stream_finished(stream, reservation, recording, keep),
         )
 
@@ -157,7 +163,7 @@ async def chat_completions(
     response.headers.update(_gateway_headers(routed.target, routed.attempts, routed.fallback))
     response.headers.update(limit_headers)
     response.headers[CACHE_HEADER] = cache_status
-    return routed.response
+    return restore_response(routed.response, values)
 
 
 def _keep(

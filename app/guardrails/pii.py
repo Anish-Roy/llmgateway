@@ -3,13 +3,14 @@
 Four kinds are found: emails, Indian mobile numbers, Aadhaar numbers (Verhoeff checksum) and
 card numbers (Luhn checksum). The route masks every request before the caches and providers
 see it, so the real values never reach a provider, a cache table or a log; the reply gets them
-back on the way out (step 3).
+back on the way out, by `restore` for a whole reply and `StreamRestorer` for a stream.
 
 Each value becomes a numbered placeholder, `[EMAIL_1]`, `[PHONE_2]`, numbered per kind in the
 order first seen across all the messages. The same value always gets the same placeholder, so
 two requests that differ only in their PII mask to the same request and share a cache entry.
 
-Only message `content` is scanned: tool-call arguments and other extra fields aren't.
+Only message `content` is scanned, and only reply text is restored: tool-call arguments and
+other extra fields are left as they are, both ways.
 """
 
 import bisect
@@ -18,7 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from app.api.schemas import ChatRequest
+from app.api.schemas import ChatRequest, ChatResponse
 
 PiiType = Literal["email", "phone", "aadhaar", "card"]
 
@@ -193,3 +194,60 @@ def mask_request(request: ChatRequest) -> Masked:
     if not masker.values:
         return Masked(request, {})
     return Masked(request.model_copy(update={"messages": messages}), masker.values)
+
+
+# What a placeholder looks like. Only those in a request's `values` are restored: one the
+# model made up, or "[EMAIL_7]" when there were two emails, stays as it is.
+_PLACEHOLDER = re.compile(r"\[(?:EMAIL|PHONE|AADHAAR|CARD)_\d+\]")
+
+
+def restore(text: str, values: dict[str, str]) -> str:
+    """`text` with each of the request's placeholders back to the value it stands for."""
+    if not values:
+        return text
+    return _PLACEHOLDER.sub(lambda m: values.get(m.group(), m.group()), text)
+
+
+def restore_response(response: ChatResponse, values: dict[str, str]) -> ChatResponse:
+    """A copy of `response` with the real values back in its text. Never the response itself:
+    the caches may hold that object, and they must keep the placeholders."""
+    if not values:
+        return response
+    restored = response.model_copy(deep=True)
+    for choice in restored.choices:
+        if choice.message.content:
+            choice.message.content = restore(choice.message.content, values)
+    return restored
+
+
+class StreamRestorer:
+    """Restores a stream's text one delta at a time.
+
+    A placeholder may arrive split across deltas ("[EMA", "IL_1]"), so a tail that could
+    still become one of the request's placeholders is held back until it either does or
+    can't. Call `flush` at the end for whatever is still held.
+    """
+
+    def __init__(self, values: dict[str, str]) -> None:
+        self._values = values
+        self._held = ""
+
+    def feed(self, text: str) -> str:
+        """What can be sent now of everything fed so far."""
+        if not self._values:
+            return text
+        text = self._held + text
+        # A placeholder holds no "[", so only the last one can start an unfinished one.
+        start = text.rfind("[")
+        tail = text[start:] if start >= 0 else ""
+        if tail and any(p.startswith(tail) and p != tail for p in self._values):
+            self._held = tail
+            text = text[:start]
+        else:
+            self._held = ""
+        return restore(text, self._values)
+
+    def flush(self) -> str:
+        """The held tail, as it is: the stream ended before it became a placeholder."""
+        held, self._held = self._held, ""
+        return held
