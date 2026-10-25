@@ -123,14 +123,14 @@ class ModelRouter:
             for retry in range(self._retries + 1):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise _final_error(errors, _deadline_error())
+                    raise _gave_up(_final_error(errors, _deadline_error()), attempts)
                 attempts += 1
                 try:
                     result = await asyncio.wait_for(call(provider, routed_request), remaining)
                 except TimeoutError:
                     # The gateway's deadline ran out mid-call: there's no time for anything else.
                     errors.append(_deadline_error(target.provider))
-                    raise _final_error(errors) from None
+                    raise _gave_up(_final_error(errors), attempts) from None
                 except ProviderError as e:
                     err = e
                 else:
@@ -146,12 +146,12 @@ class ModelRouter:
                 )
                 errors.append(err)
                 if not err.retryable and i == 0 and not err.provider_specific:
-                    raise err
+                    raise _gave_up(err, attempts)
                 if not (err.retryable and err.retry_same_provider) or retry == self._retries:
                     break
                 await self._sleep(self._backoff(retry, deadline))
 
-        raise _final_error(errors)
+        raise _gave_up(_final_error(errors), attempts)
 
     def _backoff(self, retry: int, deadline: float) -> float:
         # Exponential with full jitter, so retries from many clients don't line up. Never sleep
@@ -164,7 +164,14 @@ def _deadline_error(provider: str | None = None) -> ProviderError:
     return ProviderError(504, "Gateway deadline exceeded", type="timeout", provider=provider)
 
 
-def _final_error(errors: list[ProviderError], default: ProviderError | None = None) -> Exception:
+def _gave_up(error: ProviderError, attempts: int) -> ProviderError:
+    error.attempts = attempts
+    return error
+
+
+def _final_error(
+    errors: list[ProviderError], default: ProviderError | None = None
+) -> ProviderError:
     retryable = [e for e in errors if e.retryable]
     if retryable:
         return retryable[-1]

@@ -503,3 +503,21 @@ One entry per phase: what was chosen, and why.
   exactly as written and in-memory tests see what Postgres would store.
 - **`UsageLog` is a Protocol with a Postgres and an in-memory store**, like `KeyStore`. It's
   write-only: the Phase 10 dashboard will read the table itself.
+- **The route reports exactly one ending per request to a `Recording`:** `replied`, `streamed`
+  (from the stream's `on_finish`, after the stream is closed, next to settling) or `failed`.
+  Reporting twice is a no-op, as with settling. Building the row is wrapped too: a missing
+  price or a bug there loses that row with a warning and never touches the response.
+- **The outcome of a failed request is read from the error.** A 429 from the gateway, a 404 for
+  an unknown model, and a 503 for an alias with no configured provider are `rejected` (no
+  provider was called). A `ProviderError` after one or more calls is `provider_error`. Any other
+  exception is a 500 `gateway_error`. A cancelled request (the client left during a plain
+  reply) is `client_disconnect` with status 499, nginx's code for it, since no response went out.
+- **`ProviderError.attempts`: the router writes its call count on the error it gives up with,**
+  so a failed request's row says how many provider calls it made. Changing the error type or
+  returning a tuple would touch every error handler; one attribute doesn't.
+- **A stream's row has status 200, even if it failed partway.** That's what the client got.
+  `outcome` holds the failure, and the tokens streamed up to then are logged as an estimate.
+- **Apps that never start keep their rows in memory, free.** `create_app` builds an in-memory
+  recorder, as it builds the rate limiter, and the lifespan replaces it with the Postgres log and
+  the registry's prices. Most tests never run the lifespan; the ones that do get an in-memory
+  log from `conftest`, which already gives them no pool.

@@ -9,7 +9,8 @@ from app.api.sse import sse_response
 from app.auth.keys import ApiKey
 from app.auth.rate_limit import RateLimiter, Reservation
 from app.routing.registry import Target
-from app.routing.router import ModelRouter, StreamRecord
+from app.routing.router import ModelRouter, RoutedStream
+from app.usage.recorder import Recording, UsageRecorder
 from app.usage.tokens import estimate_usage
 
 # Every /v1 route needs a key, /v1/models included, as on OpenAI. /health stays open.
@@ -25,6 +26,10 @@ def get_rate_limiter(request: Request) -> RateLimiter:
     return request.app.state.rate_limiter
 
 
+def get_usage_recorder(request: Request) -> UsageRecorder:
+    return request.app.state.usage_recorder
+
+
 @router.post("/chat/completions", response_model=ChatResponse)
 async def chat_completions(
     body: ChatRequest,
@@ -32,10 +37,18 @@ async def chat_completions(
     model_router: Annotated[ModelRouter, Depends(get_model_router)],
     key: Annotated[ApiKey, Depends(require_api_key)],
     limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+    recorder: Annotated[UsageRecorder, Depends(get_usage_recorder)],
 ):
+    # Every request from here on gets a row in request_logs, written after it ends: a reply,
+    # a closed stream, or an error.
+    recording = recorder.start(key, body)
     # A 429 here, before any provider is called. Admitted requests hold their estimated
     # tokens until they're settled with the real usage below.
-    reservation = limiter.reserve(key, body)
+    try:
+        reservation = limiter.reserve(key, body)
+    except BaseException as e:
+        recording.failed(e)
+        raise
     limit_headers = rate_limit_headers(reservation.status)
 
     if body.stream:
@@ -44,37 +57,43 @@ async def chat_completions(
         # can say which provider is streaming.
         try:
             stream = await model_router.stream(body)
-        except BaseException:
+        except BaseException as e:
             # No provider answered: the tokens go back (the request still counts).
             reservation.settle(0)
+            recording.failed(e)
             raise
         headers = _gateway_headers(stream.target, stream.attempts, stream.fallback)
         return sse_response(
             stream,
             include_usage=_wants_usage(body),
             headers={**headers, **limit_headers},
-            on_finish=lambda record: _settle_stream(reservation, record),
+            on_finish=lambda _: _stream_finished(stream, reservation, recording),
         )
     try:
         routed = await model_router.chat(body)
-    except BaseException:
+    except BaseException as e:
         reservation.settle(0)
+        recording.failed(e)
         raise
     usage = routed.response.usage
-    if not usage.total_tokens:
+    estimated = not usage.total_tokens
+    if estimated:
         # A provider that reported no usage still used tokens.
         reply = routed.response.choices[0].message.content if routed.response.choices else ""
         usage = estimate_usage(body.messages, reply or "")
     reservation.settle(usage.total_tokens)
+    recording.replied(routed, usage, estimated)
     response.headers.update(_gateway_headers(routed.target, routed.attempts, routed.fallback))
     response.headers.update(limit_headers)
     return routed.response
 
 
-def _settle_stream(reservation: Reservation, record: StreamRecord) -> None:
+def _stream_finished(stream: RoutedStream, reservation: Reservation, recording: Recording) -> None:
     # The record has the provider's usage, or an estimate if the stream was cut short. If
     # closing the stream itself failed and left no usage, charge what was reserved.
+    record = stream.record
     reservation.settle(record.usage.total_tokens if record.usage else reservation.tokens)
+    recording.streamed(stream)
 
 
 def _gateway_headers(target: Target, attempts: int, fallback: bool) -> dict[str, str]:

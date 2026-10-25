@@ -38,6 +38,9 @@ class ProviderError(Exception):
         # True for "this provider can't do that" (e.g. Gemini and `tools`): the request is fine,
         # so another provider should get a chance even though the status is a 400.
         self.provider_specific = provider_specific
+        # Provider calls the router made for the request before giving up with this error, for
+        # request logs. Set by the router; 0 if it never called a provider.
+        self.attempts = 0
 
     @property
     def retryable(self) -> bool:

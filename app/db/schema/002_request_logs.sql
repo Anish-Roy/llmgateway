@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS request_logs (
     prompt_tokens     integer     NOT NULL DEFAULT 0 CHECK (prompt_tokens >= 0),
     completion_tokens integer     NOT NULL DEFAULT 0 CHECK (completion_tokens >= 0),
     usage_estimated   boolean     NOT NULL DEFAULT false,
-    -- Until the last byte was sent. Time to first token is for streams only.
+    -- Until the reply was ready, or the stream closed. Time to first token: streams only.
     latency_ms        integer     NOT NULL CHECK (latency_ms >= 0),
     ttft_ms           integer     CHECK (ttft_ms >= 0),
     -- Exact decimal, not float: sums over thousands of tiny costs must not drift. 10 decimal

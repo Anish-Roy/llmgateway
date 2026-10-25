@@ -17,9 +17,17 @@ from app.providers.base import Provider
 from app.providers.gemini import GeminiProvider
 from app.providers.groq import GroqProvider
 from app.providers.mock import MockProvider
-from app.routing.registry import GeminiSpec, GroqSpec, MockSpec, RegistryConfig, load_registry
+from app.routing.registry import (
+    FREE,
+    GeminiSpec,
+    GroqSpec,
+    MockSpec,
+    RegistryConfig,
+    load_registry,
+)
 from app.routing.router import ModelRouter
-from app.usage.log import LogWriter, PostgresUsageLog
+from app.usage.log import InMemoryUsageLog, LogWriter, PostgresUsageLog
+from app.usage.recorder import UsageRecorder
 from app.usage.tokens import load_encoding_in_background
 
 logger = logging.getLogger(__name__)
@@ -89,18 +97,22 @@ def create_app() -> FastAPI:
             app.state.model_router = ModelRouter(
                 config.aliases, providers, deadline_s=settings.request_deadline_s
             )
-            app.state.log_writer = LogWriter(PostgresUsageLog(db_pool))
+            log_writer = LogWriter(PostgresUsageLog(db_pool))
+            app.state.usage_recorder = UsageRecorder(log_writer, config.price)
             try:
                 yield
             finally:
                 # Rows for the last requests, written before the pool below closes.
-                await app.state.log_writer.drain()
+                await log_writer.drain()
 
     app = FastAPI(title="LLM Gateway", version=__version__, lifespan=lifespan)
     # In memory and nothing to open or close, so it's built here rather than in the lifespan.
     app.state.rate_limiter = RateLimiter(
         default_completion_tokens=settings.rate_limit_default_completion_tokens
     )
+    # Replaced at startup by the Postgres log and the registry's prices. An app that's never
+    # started (most tests) keeps its rows in memory, at no cost.
+    app.state.usage_recorder = UsageRecorder(LogWriter(InMemoryUsageLog()), lambda _: FREE)
     install_error_handlers(app)
     app.include_router(router)
 

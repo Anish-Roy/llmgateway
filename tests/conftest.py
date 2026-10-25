@@ -8,6 +8,7 @@ from psycopg.conninfo import make_conninfo
 import app.main
 from app.config import Settings
 from app.usage import tokens
+from app.usage.log import InMemoryUsageLog
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +29,8 @@ def _no_database_at_startup(monkeypatch):
         yield None
 
     monkeypatch.setattr(app.main, "open_pool", no_pool)
+    # With no pool, request logs are kept in memory instead.
+    monkeypatch.setattr(app.main, "PostgresUsageLog", lambda pool: InMemoryUsageLog())
 
 
 @pytest.fixture
