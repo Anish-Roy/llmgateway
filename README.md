@@ -3,10 +3,11 @@
 An OpenAI-compatible proxy in front of multiple LLM providers, with fallback, per-key rate
 limits, exact and semantic caching, PII masking and a cost dashboard.
 
-Status: Phase 10 done (Groq + Gemini behind model aliases with retry and fallback, streaming,
+Status: Phase 11 done (Groq + Gemini behind model aliases with retry and fallback, streaming,
 API keys, per-key rate limits, a request log with the cost of every call, an exact-match and
 an opt-in semantic cache, PII masking, `model: "auto"`, which picks the cheap or the strong
-alias per request, and a cost dashboard). See [plan.md](plan.md) for the roadmap.
+alias per request, a cost dashboard, and a replay benchmark: **the cache and the router cut
+cost by 33.6% on the replayed query log**). See [plan.md](plan.md) for the roadmap.
 
 ## Quick start
 
@@ -321,6 +322,68 @@ Known limits:
   color each. Later ones share a gray "Other keys" in the chart; the table lists every key.
 - **No alerts or budgets:** it shows spend, it doesn't stop it.
 
+### Replay benchmark
+
+`scripts/replay.py` sends the whole query log (378 prompts) through a running gateway three
+ways, each on a key of its own, and reads each key's spend from the request log:
+
+1. **baseline:** everything to `strong`, caches off;
+2. **cache:** everything to `strong`, through the exact and the semantic cache;
+3. **cache+router:** `model: "auto"`, through both caches.
+
+Every request is the same otherwise: one user message, temperature 0, `max_tokens` 512, one
+at a time, in file order. Results from 2026-10-25, on Groq (`fast` is gpt-oss-20b, `strong`
+gpt-oss-120b), at list price:
+
+| Mode | Prompts | Cost (USD) | Saved | Hit rate (exact / semantic) | False hits | To cheap model | Fallbacks | p50 | p95 |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| baseline | 378 | 0.0805 | - | 0.0% (0 / 0) | 0 | - | 0 | 1,525 ms | 1,855 ms |
+| cache | 378 | 0.0741 | 7.9% | 7.1% (0 / 27) | 4 | - | 0 | 1,491 ms | 1,765 ms |
+| cache+router | 378 | 0.0535 | 33.6% | 6.6% (0 / 25) | 4 | 67.5% | 0 | 1,056 ms | 1,725 ms |
+
+What the gateway itself adds, measured on the free `mock` alias (its provider answers at
+once, so the client's latency is the gateway's own), over cache misses:
+
+| Gateway overhead | Requests | p50 | p95 |
+|---|--:|--:|--:|
+| caches off | 378 | 2.8 ms | 3.6 ms |
+| exact cache | 378 | 3.8 ms | 4.7 ms |
+| semantic cache | 351 | 28.1 ms | 36.7 ms |
+
+What the numbers mean:
+
+- **Most of the saving is the router.** It sent 67.5% of prompts to a model at half the price
+  per token. It agreed with the dataset's easy/hard labels on 362 of 378 prompts.
+- **The cache saves what it hits, and no more.** All 378 prompts are different texts, so
+  every hit is semantic. 27 hits (7.1%) saved 7.9%: a hit skips a whole provider call. With
+  the router, hits drop to 25: an answer is stored per alias, so a rephrasing routed to the
+  other alias than its original can't find it.
+- **The hit rate is the dataset's, not real traffic's.** A quarter of the log is planted
+  near-duplicates (the best possible hit rate is 25.4%), so real traffic would hit less
+  often, or more, depending on how repetitive it is.
+- **False hits are wrong answers.** 4 of 27 semantic hits answered a different question:
+  one is "Convert 100 miles to kilometres." given the answer to "Convert 100 kilometres to
+  miles." This is why the semantic cache is opt-in per request (see Semantic cache above).
+- **Latency:** a semantic hit took 39 ms at p50, a miss 1.5 s. The router's p50 is lower
+  because the cheap model answers faster. Groq's own variation (tens of ms between runs) is
+  bigger than the semantic cache's 25 ms, so compare overheads with the second table.
+- **Quality isn't measured here,** only cost and speed. The router's cheap answers were
+  spot-checked in Phase 9 (`docs/router_spotcheck.md`).
+
+To run it (real providers, about 1,100 calls; Groq's free tier allows 200K tokens a day on
+gpt-oss-120b, about one mode's worth, so a run may take more than a day or more than one key):
+
+```bash
+uv run python -m scripts.replay overhead            # free: the mock alias
+uv run python -m scripts.replay run                 # all three modes; rerun to resume
+uv run python -m scripts.replay report
+```
+
+Runs resume: answers are appended to `data/replay/<run>/<mode>.jsonl` as they come back, and
+a run stops at the first failure or fallback (a fallback model has its own price). The run's
+keys are in `data/replay/state.json`, kept out of git. This run's results are in
+`data/replay/d7eab702/`. Details and caveats: `docs/decisions.md`.
+
 ## Layout
 
 ```
@@ -335,6 +398,7 @@ app/
   config.py     settings from env / .env
   main.py       FastAPI app
 data/queries.jsonl       evaluation query log (built by scripts/build_dataset.py)
+data/replay/             replay benchmark results, one folder per run
 dashboard/               Streamlit cost dashboard (queries.py: its SQL; app.py: the page)
 docs/decisions.md        design decisions, one entry per phase
 ```

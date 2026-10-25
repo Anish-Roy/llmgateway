@@ -1230,3 +1230,98 @@ One entry per phase: what was chosen, and why.
     token came after 517 ms.
   - **Checked:** every tile matched the run's own count and a SQL query. Picking keys kept
     each key's color. Light and dark themes both drew.
+
+## Phase 11: replay benchmark
+
+- **Three modes, one variable each:** baseline (`strong`, caches off), cache (`strong`, both
+  caches) and cache+router (`auto`, both caches). Cache vs baseline is what the cache saves;
+  cache+router vs cache is what the router adds on top. Every request is otherwise the same:
+  one user message, temperature 0 (so answers are cacheable), `max_tokens` 512. It has to be
+  well under `auto`'s `long_answer_max_tokens` (2048), or every request would go to `strong`.
+- **The replay goes through a running gateway, over HTTP,** not the app in-process. The
+  numbers then include everything a client pays for: auth, rate limits, PII masking, the
+  caches and the request log.
+- **Each mode has a key of its own,** created by the script with very high limits so the
+  gateway's own rate limit never shows. A mode's cost is then everything its key spent in
+  `request_logs`, the same numbers the dashboard shows, failed calls included. The key also
+  gives each mode its own semantic cache, which is scoped per key.
+- **The exact cache is shared by all keys, so every request carries a system prompt naming
+  the run, the mode and its key** (`Benchmark run d7eab702, mode cache, key 24.`). An answer
+  stored in one mode, run or key is never an exact hit in another. The router reads only user
+  messages, so the system prompt doesn't change routing. It adds the same few tokens to every
+  request in every mode.
+- **One request at a time, in file order, with a 5 s pause after each provider call.** The
+  pause is for Groq's per-minute limits, and lets a cache store land before the next lookup.
+  In file order, a near-duplicate comes after its original or before it: either way the first
+  one is the miss, so order doesn't change the hit count.
+- **Runs resume.** Each answer is appended to `data/replay/<run>/<mode>.jsonl` as it comes
+  back, and a rerun skips the prompts already there.
+  - **A failure stops the run unsaved,** so the rerun tries that prompt again.
+  - **A fallback answer is saved, then stops the run.** Gemini's prices differ from Groq's,
+    and a run of fallbacks usually means Groq hit a limit. Counting them silently would make
+    the cost wrong.
+- **False hits are counted from the client's side:** a semantic hit on a prompt none of whose
+  meaning group (`dup_of` chains, as in Phase 7) had been answered earlier in the mode. Nothing
+  with its meaning was stored, so it got another question's answer. It's a lower bound: a hit
+  can also match the wrong prompt when the right one was stored. The gateway doesn't say which
+  stored prompt a hit matched, and shouldn't.
+- **Overhead is measured on the `mock` alias,** whose provider answers at once with no
+  network, three ways: caches off, the exact cache, the semantic cache too. The client's
+  latency is then the gateway's own. Only misses count: a hit skips a provider call that costs
+  nothing here, so it would make the caches look cheaper than they are. Subtracting provider
+  time from real requests isn't possible: `request_logs` doesn't record it, and Groq varies by
+  more than the gateway adds.
+- **Groq's free tier was the hard limit.** gpt-oss-120b allows 200K tokens a day per
+  organization, and the baseline alone used 162K. The cache mode stopped at prompt 77 with a
+  503 (Groq refused with a 429, the retry too, and Gemini failed the fallback). The stop rule
+  worked: nothing was saved from a fallback.
+  - **The cache mode was started over, not resumed.** Its first 76 answers were stored at
+    16:29–16:43 UTC and the cache keeps them for 24 h (`CACHE_TTL_S`). Resumed the next day,
+    they'd expire partway through and the later rephrasings would miss, so the hit rate would
+    come out low. Its key was revoked, its results moved aside
+    (`cache.stopped-key23.jsonl`, kept), and it ran again on a new key, so with a new system
+    prompt. The key id joined the system prompt for this.
+  - **The cache and cache+router modes ran on two other Groq accounts' keys,** one each. Same
+    models, same list prices: the accounts change the limits, not the cost. Each mode ran
+    start to finish in about 40 minutes, inside one cache TTL.
+- **Results (2026-10-25, run `d7eab702`):**
+
+  | Mode | Cost (USD) | Saved | Hit rate (exact / semantic) | False hits | To cheap | p50 | p95 |
+  |---|--:|--:|--:|--:|--:|--:|--:|
+  | baseline | 0.0805 | - | 0.0% (0 / 0) | 0 | - | 1,525 ms | 1,855 ms |
+  | cache | 0.0741 | 7.9% | 7.1% (0 / 27) | 4 | - | 1,491 ms | 1,765 ms |
+  | cache+router | 0.0535 | 33.6% | 6.6% (0 / 25) | 4 | 67.5% | 1,056 ms | 1,725 ms |
+
+  - **No fallbacks or errors** in any of the three final modes.
+  - **The router is most of the saving.** It sent 236 provider calls to gpt-oss-20b ($0.0207)
+    and 117 to gpt-oss-120b ($0.0328). It agreed with the dataset's easy/hard labels on 362
+    of 378 prompts: 11 hard prompts went to `fast` and 5 easy ones to `strong`. The rules
+    that sent most prompts to `strong` were `long_prompt` (56), "write" (20) and "explain"
+    (20).
+  - **The cache saved a bit more than its hit rate,** 7.9% for 7.1% of prompts: each hit
+    skips a whole call. Its hits' logged `saved_usd` adds up to $0.0065, which matches the
+    difference from the baseline ($0.0064). Answer lengths vary a little between runs even at
+    temperature 0.
+  - **No exact hits:** the log's 378 prompts are all different texts. 27 of a possible 96
+    rephrasings hit (the best possible hit rate is 25.4%): 0.95 is a strict threshold, chosen
+    in Phase 7 to keep false hits down.
+  - **Fewer hits with the router (25, not 27).** The router picks the alias before the cache
+    is asked, and an answer is stored per alias. A rephrasing that lands on the other alias
+    than its original can't find it, for example when only one of the two has a keyword.
+  - **The 4 false hits are the same in both cache modes:** q0240 (a system of equations),
+    q0274, q0309 (string to integer in JavaScript) and q0378 (a dice probability). q0274 is a
+    labelled trap: "Convert 100 miles to kilometres." got the answer to "Convert 100 kilometres
+    to miles." It's the word-order blindness Phase 7 measured, and why the semantic cache is
+    opt-in.
+  - **Latency:** a semantic hit took 39 ms at p50 and a miss 1.5 s. The router's lower p50 is
+    the cheap model answering faster. Run-to-run variation at Groq is bigger than the semantic
+    cache's 25 ms, so the mode table can't show it: the overhead table does.
+- **Overhead (the gateway's own latency, over misses, on this laptop):** 2.8 ms p50 / 3.6 ms
+  p95 with caches off, 3.8 / 4.7 ms with the exact cache, 28.1 / 36.7 ms with the semantic
+  cache. The semantic cache's ~24 ms is almost all the MiniLM embedding, paid on every lookup,
+  hit or miss.
+- **What the number means for the resume bullet:** "cut LLM cost by 33.6% on a replayed query
+  log through caching and cheap-model routing". It's this dataset's number. A quarter of the
+  log is planted near-duplicates, and its easy prompts are short: on real traffic, both the
+  hit rate and the router's cheap share could be higher or lower. Quality isn't in it: the
+  router's cheap answers were spot-checked in Phase 9, not here.
