@@ -1,18 +1,27 @@
 import logging
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 
 from app.api.auth import require_api_key
 from app.api.rate_limit_headers import rate_limit_headers
-from app.api.schemas import ChatRequest, ChatResponse, Model, ModelList, Usage
-from app.api.sse import sse_response
+from app.api.schemas import (
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    Choice,
+    Model,
+    ModelList,
+    Usage,
+)
+from app.api.sse import sse_replay, sse_response
 from app.auth.keys import ApiKey
 from app.auth.rate_limit import RateLimiter, Reservation
 from app.cache.key import CACHE_HEADER, storable
 from app.cache.store import CacheEntry, ResponseCache
 from app.routing.registry import Target
-from app.routing.router import ModelRouter, Routed, RoutedStream
+from app.routing.router import ModelRouter, RoutedStream
 from app.usage.recorder import Recording, UsageRecorder
 from app.usage.tokens import estimate_usage
 
@@ -62,6 +71,31 @@ async def chat_completions(
         raise
     limit_headers = rate_limit_headers(reservation.status)
 
+    # Both kinds of request share entries: the key leaves `stream` out. None when the request
+    # isn't cacheable or the client turned the cache off.
+    cache_key = cache.key_for(body, request.headers.get(CACHE_HEADER))
+    try:
+        entry = await cache.get(cache_key) if cache_key is not None else None
+    except BaseException as e:
+        # The lookup never raises; this is the client leaving while it ran.
+        reservation.settle(0)
+        recording.failed(e)
+        raise
+    if entry is not None:
+        # No provider call: the reserved tokens go back (the request still counts).
+        reservation.settle(0)
+        recording.cached(entry)
+        headers = {**_cache_hit_headers(entry), **limit_headers}
+        if body.stream:
+            return sse_replay(entry.response, include_usage=_wants_usage(body), headers=headers)
+        response.headers.update(headers)
+        return _served_again(entry.response)
+    cache_status = "miss" if cache_key is not None else "bypass"
+
+    def keep(answer: ChatResponse, target: Target, usage: Usage) -> None:
+        if cache_key is not None:
+            _keep(cache, recorder, cache_key, body.model, answer, target, usage)
+
     if body.stream:
         # The router picks a provider before the response starts, so a failure before the
         # first token is still a normal JSON error with its own status, and the headers below
@@ -77,25 +111,9 @@ async def chat_completions(
         return sse_response(
             stream,
             include_usage=_wants_usage(body),
-            headers={**headers, **limit_headers},
-            on_finish=lambda _: _stream_finished(stream, reservation, recording),
+            headers={**headers, **limit_headers, CACHE_HEADER: cache_status},
+            on_finish=lambda _: _stream_finished(stream, reservation, recording, keep),
         )
-    # None when the request isn't cacheable or the client turned the cache off.
-    cache_key = cache.key_for(body, request.headers.get(CACHE_HEADER))
-    try:
-        entry = await cache.get(cache_key) if cache_key is not None else None
-    except BaseException as e:
-        # The lookup never raises; this is the client leaving while it ran.
-        reservation.settle(0)
-        recording.failed(e)
-        raise
-    if entry is not None:
-        # No provider call: the reserved tokens go back (the request still counts).
-        reservation.settle(0)
-        recording.cached(entry)
-        response.headers.update(_cache_hit_headers(entry))
-        response.headers.update(limit_headers)
-        return _served_again(entry.response)
 
     try:
         routed = await model_router.chat(body)
@@ -111,11 +129,10 @@ async def chat_completions(
         usage = estimate_usage(body.messages, reply or "")
     reservation.settle(usage.total_tokens)
     recording.replied(routed, usage, estimated)
-    if cache_key is not None:
-        _keep(cache, recorder, cache_key, body, routed, usage)
+    keep(routed.response, routed.target, usage)
     response.headers.update(_gateway_headers(routed.target, routed.attempts, routed.fallback))
     response.headers.update(limit_headers)
-    response.headers[CACHE_HEADER] = "miss" if cache_key is not None else "bypass"
+    response.headers[CACHE_HEADER] = cache_status
     return routed.response
 
 
@@ -123,25 +140,26 @@ def _keep(
     cache: ResponseCache,
     recorder: UsageRecorder,
     key: bytes,
-    body: ChatRequest,
-    routed: Routed,
+    alias: str,
+    answer: ChatResponse,
+    target: Target,
     usage: Usage,
 ) -> None:
-    """Stores a reply for the next identical request, if it's worth serving again. Never
-    fails the reply, which the client is about to get."""
-    if not storable(routed.response):
+    """Stores an answer for the next identical request, if it's worth serving again. Never
+    fails the request: the client has the answer, or is about to."""
+    if not storable(answer):
         return
     try:
-        cost_usd = recorder.cost(routed.target, usage)
+        cost_usd = recorder.cost(target, usage)
     except Exception:
-        logger.warning("could not price a reply for the cache", exc_info=True)
+        logger.warning("could not price an answer for the cache", exc_info=True)
         return
     cache.put(
         key,
-        alias=body.model,
-        response=routed.response,
-        provider=routed.target.provider,
-        model=routed.target.model,
+        alias=alias,
+        response=answer,
+        provider=target.provider,
+        model=target.model,
         cost_usd=cost_usd,
     )
 
@@ -157,12 +175,37 @@ def _cache_hit_headers(entry: CacheEntry) -> dict[str, str]:
     return {**_gateway_headers(target, 0, False), CACHE_HEADER: "exact"}
 
 
-def _stream_finished(stream: RoutedStream, reservation: Reservation, recording: Recording) -> None:
+def _stream_finished(
+    stream: RoutedStream,
+    reservation: Reservation,
+    recording: Recording,
+    keep: Callable[[ChatResponse, Target, Usage], None],
+) -> None:
     # The record has the provider's usage, or an estimate if the stream was cut short. If
     # closing the stream itself failed and left no usage, charge what was reserved.
     record = stream.record
     reservation.settle(record.usage.total_tokens if record.usage else reservation.tokens)
     recording.streamed(stream)
+    # Only an answer that streamed to the end is kept: a cut one would be served cut forever.
+    if record.outcome == "completed" and record.usage is not None:
+        keep(_streamed_answer(stream), stream.target, record.usage)
+
+
+def _streamed_answer(stream: RoutedStream) -> ChatResponse:
+    """A finished stream as the reply a non-streamed request would have got, so either kind
+    of request can be served from it. Text only: a tool call's deltas aren't kept, and its
+    finish_reason (tool_calls) keeps it out of the cache."""
+    record = stream.record
+    return ChatResponse(
+        model=stream.target.model,
+        choices=[
+            Choice(
+                message=ChatMessage(role="assistant", content=record.text),
+                finish_reason=record.finish_reason,
+            )
+        ],
+        usage=record.usage,
+    )
 
 
 def _gateway_headers(target: Target, attempts: int, fallback: bool) -> dict[str, str]:

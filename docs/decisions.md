@@ -587,7 +587,6 @@ One entry per phase: what was chosen, and why.
   so a key at its TPM limit gets a 429 even for a request that would have been a free hit.
   Accepted, as it's simple and the same for every request. The fix, if hits should skip TPM:
   look up first, then `limiter.acquire(key, 0)` on a hit (RPM only) and `reserve` on a miss.
-- **Only non-streamed requests use the cache so far.** Streams get it in step 4.
 - **Which answers are kept (`storable`):** one choice, with text, no tool calls, ending in
   `stop` or `length` (`max_tokens` is in the key, so a cut answer is the answer to that
   request). Not content filters, empty replies or failures. An answer that came from a
@@ -608,3 +607,20 @@ One entry per phase: what was chosen, and why.
   Postgres store for it on startup.** An in-memory cache by default would turn every existing
   test that repeats a temperature-0 request into a hit and change its call counts. Tests that
   are about the cache give the app one; one test runs the real startup against Postgres.
+- **Streams use the same entries as plain requests.** The key leaves `stream` out, so the
+  lookup runs once, before the route splits into streamed and plain. A stored answer serves
+  either kind of request, whichever kind produced it.
+- **A hit on a stream replays the answer as OpenAI's chunks:** a role chunk, the whole text in
+  one chunk, an empty delta with the finish_reason, then the usage-only chunk, sent only with
+  `stream_options.include_usage` as on a provider stream, and `[DONE]`. One text chunk because
+  the answer is all there already: splitting it would only add events, and a client
+  concatenates deltas either way. The chunks go through the same `_events` as a provider's, so
+  the rules on usage and errors can't drift apart. Phase 7 can replay semantic hits with it.
+- **A stream is stored from its `StreamRecord` once it's closed**, in `on_finish`, next to
+  settling and logging: the text, the finish_reason, the usage, and the target's model. Only
+  a stream that ended `completed` is kept; one cut by a provider error or a client leaving
+  would be served cut forever. A tool-call stream ends with `tool_calls`, which `storable`
+  turns away, so the deltas the record doesn't keep can't be lost. Reasoning text the client
+  asked for isn't kept either: a hit returns the answer only.
+- **Checked with the openai SDK** against the mock: a plain hit, then a streamed hit with
+  `include_usage`, read as normal completions, with one provider call in all.

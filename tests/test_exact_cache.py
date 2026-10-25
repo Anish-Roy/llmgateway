@@ -4,10 +4,12 @@ Each gateway gets an in-memory cache of its own (an app's default caches nothing
 limiter on a frozen clock, so token headers are exact.
 """
 
+import json
 from datetime import datetime
 from decimal import Decimal
 
 import httpx2
+import openai
 import psycopg
 from fastapi.testclient import TestClient
 
@@ -292,6 +294,172 @@ async def test_a_hit_counts_as_a_request_but_uses_no_tokens():
     assert int(again.headers["x-ratelimit-remaining-tokens"]) == 100_000 - 8 - held
     # But the hits still count against the key's requests per minute.
     assert limited.status_code == 429
+
+
+# Streams.
+
+
+def events(resp: httpx2.Response) -> list[str]:
+    """The `data:` payloads of a streamed response, exactly as sent."""
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    return [e.removeprefix("data: ") for e in resp.text.strip().split("\n\n")]
+
+
+def streamed_text(resp: httpx2.Response) -> str:
+    chunks = [json.loads(e) for e in events(resp)[:-1]]
+    return "".join(c["choices"][0]["delta"].get("content", "") for c in chunks if c["choices"])
+
+
+async def test_a_repeated_stream_is_replayed_from_the_cache():
+    gw = Gateway()
+
+    first = await gw.post(chat(stream=True))
+    second = await gw.post(chat(stream=True))
+
+    assert gw.calls == 1
+    assert first.headers["x-gateway-cache"] == "miss"
+    assert second.headers["x-gateway-cache"] == "exact"
+    assert second.headers["x-gateway-attempts"] == "0"
+    assert streamed_text(second) == streamed_text(first) == "Echo: hello there"
+
+
+async def test_a_replay_is_shaped_like_a_provider_stream():
+    gw = Gateway()
+    await gw.post(chat())
+
+    hit = await gw.post(chat(stream=True))
+    *chunks, done = events(hit)
+    chunks = [json.loads(c) for c in chunks]
+
+    assert done == "[DONE]"
+    # A role chunk, the text, then the finish_reason, all with one id.
+    assert [c["choices"][0]["delta"] for c in chunks] == [
+        {"role": "assistant", "content": ""},
+        {"content": "Echo: hello there"},
+        {},
+    ]
+    assert [c["choices"][0].get("finish_reason") for c in chunks] == [None, None, "stop"]
+    assert len({c["id"] for c in chunks}) == 1
+    assert all(c["object"] == "chat.completion.chunk" and c["model"] == "m" for c in chunks)
+    # No usage unless the client asks for it, as on a provider stream.
+    assert all("usage" not in c for c in chunks)
+
+
+async def test_a_replay_sends_usage_when_asked():
+    gw = Gateway()
+    await gw.post(chat())
+
+    hit = await gw.post(chat(stream=True, stream_options={"include_usage": True}))
+    last = json.loads(events(hit)[-2])
+
+    assert last["choices"] == []
+    assert last["usage"] == {"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8}
+
+
+async def test_a_streamed_answer_serves_a_plain_request():
+    gw = Gateway()
+    await gw.post(chat(stream=True, stream_options={"include_usage": True}))
+
+    hit = await gw.post(chat())
+
+    assert hit.headers["x-gateway-cache"] == "exact"
+    assert gw.calls == 1
+    body = hit.json()
+    assert body["choices"] == [
+        {
+            "index": 0,
+            "message": {"role": "assistant", "content": "Echo: hello there"},
+            "finish_reason": "stop",
+        }
+    ]
+    assert body["usage"] == {"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8}
+
+
+async def test_a_streamed_answer_is_stored_with_its_cost():
+    gw = Gateway()
+
+    await gw.post(chat(stream=True))
+
+    (entry,) = gw.store.entries.values()
+    assert (entry.provider, entry.model) == ("groq", "m")
+    # 3 x $1.5/1M + 5 x $4/1M, from the stream's usage.
+    assert entry.cost_usd == Decimal("0.0000245")
+
+
+async def test_a_stream_hit_is_logged_as_exact():
+    gw = Gateway()
+
+    await gw.post(chat(stream=True))
+    await gw.post(chat(stream=True))
+    miss, hit = await gw.rows()
+
+    assert (miss.cache_status, miss.stream) == ("miss", True)
+    assert (hit.cache_status, hit.stream, hit.status_code, hit.outcome) == (
+        "exact",
+        True,
+        200,
+        "completed",
+    )
+    assert (hit.prompt_tokens, hit.completion_tokens, hit.cost_usd) == (0, 0, Decimal(0))
+    assert hit.attempts == 0
+
+
+async def test_a_stream_cut_partway_isnt_cached():
+    gw = Gateway(("midstream", MockProvider(fail_after_chunks=3)))
+
+    cut = await gw.post(chat(stream=True))
+    again = await gw.post(chat(stream=True))
+
+    assert "error" in json.loads(events(cut)[-1])
+    assert again.headers["x-gateway-cache"] == "miss"
+    assert gw.store.entries == {}
+
+
+async def test_cache_off_keeps_a_stream_out_of_the_cache():
+    gw = Gateway()
+
+    off = await gw.post(chat(stream=True), headers={"x-gateway-cache": "off"})
+
+    assert off.headers["x-gateway-cache"] == "bypass"
+    assert gw.store.entries == {}
+
+
+# The openai SDK, the gateway's compatibility contract.
+
+
+def sdk(gw: Gateway) -> openai.AsyncOpenAI:
+    return openai.AsyncOpenAI(
+        api_key=gw.key,
+        base_url="http://gateway.test/v1",
+        http_client=httpx2.AsyncClient(transport=httpx2.ASGITransport(app=gw.app)),
+        max_retries=0,
+    )
+
+
+async def test_the_sdk_reads_hits_plain_and_streamed():
+    gw = Gateway()
+    client = sdk(gw)
+
+    first = await client.chat.completions.create(model="fast", messages=MESSAGES, temperature=0)
+    await gw.cache.drain()
+    again = await client.chat.completions.with_raw_response.create(
+        model="fast", messages=MESSAGES, temperature=0
+    )
+    stream = await client.chat.completions.create(
+        model="fast",
+        messages=MESSAGES,
+        temperature=0,
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+    chunks = [chunk async for chunk in stream]
+
+    assert again.headers["x-gateway-cache"] == "exact"
+    assert again.parse().choices[0].message.content == first.choices[0].message.content
+    text = "".join(c.choices[0].delta.content or "" for c in chunks if c.choices)
+    assert text == "Echo: hello there"
+    assert chunks[-1].usage.total_tokens == 8
+    assert gw.calls == 1
 
 
 # The whole path, through Postgres.

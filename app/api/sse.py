@@ -7,12 +7,15 @@ openai SDK raises that event as an `APIError`.
 """
 
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+import time
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping
 
 from fastapi.responses import StreamingResponse
 from starlette.types import Receive, Scope, Send
 
 from app.api.errors import error_body
+from app.api.schemas import ChatChunk, ChatResponse, ChunkChoice, Delta
 from app.providers.base import ProviderError
 from app.routing.router import RoutedStream, StreamRecord
 
@@ -67,13 +70,53 @@ def sse_response(
                 on_finish(stream.record)
 
     return _ClosingStreamingResponse(
-        _events(stream, include_usage), close, {**SSE_HEADERS, **headers}
+        _events(stream, include_usage, stream.target.provider), close, {**SSE_HEADERS, **headers}
     )
 
 
-async def _events(stream: RoutedStream, include_usage: bool) -> AsyncIterator[str]:
+def sse_replay(
+    stored: ChatResponse, *, include_usage: bool, headers: Mapping[str, str]
+) -> StreamingResponse:
+    """A stored answer sent as a stream, for a cache hit: the same events a provider's stream
+    would have produced, all at once."""
+
+    async def chunks() -> AsyncIterator[ChatChunk]:
+        for chunk in replay_chunks(stored):
+            yield chunk
+
+    async def nothing_to_close() -> None:
+        pass
+
+    return _ClosingStreamingResponse(
+        _events(chunks(), include_usage, "cache"), nothing_to_close, {**SSE_HEADERS, **headers}
+    )
+
+
+def replay_chunks(stored: ChatResponse) -> Iterable[ChatChunk]:
+    """A one-choice answer as OpenAI streams it: a role chunk, the text, an empty delta with
+    the finish_reason, then the usage with no choices. One text chunk: the whole answer is
+    already here, so splitting it would only add events. A fresh id and timestamp, as for
+    any new completion."""
+    choice = stored.choices[0]
+    meta = {
+        "id": f"chatcmpl-{uuid.uuid4().hex}",
+        "created": int(time.time()),
+        "model": stored.model,
+    }
+    return [
+        ChatChunk(**meta, choices=[ChunkChoice(delta=Delta(role="assistant", content=""))]),
+        ChatChunk(**meta, choices=[ChunkChoice(delta=Delta(content=choice.message.content))]),
+        ChatChunk(**meta, choices=[ChunkChoice(finish_reason=choice.finish_reason)]),
+        ChatChunk(**meta, usage=stored.usage),
+    ]
+
+
+async def _events(
+    chunks: AsyncIterator[ChatChunk], include_usage: bool, source: str
+) -> AsyncIterator[str]:
+    """`source` names where the chunks come from (a provider, or the cache) in logs."""
     try:
-        async for chunk in stream:
+        async for chunk in chunks:
             if not chunk.choices and not include_usage:
                 # The usage-only chunk is sent only when the client asked for it
                 # (stream_options.include_usage), as OpenAI does. Clients that read
@@ -84,7 +127,7 @@ async def _events(stream: RoutedStream, include_usage: bool) -> AsyncIterator[st
             exclude = {"usage"} if chunk.choices else None
             yield _event(chunk.model_dump_json(exclude_none=True, exclude=exclude))
     except ProviderError as e:
-        logger.warning("%s failed mid-stream: %s %s", stream.target.provider, e.status, e.message)
+        logger.warning("%s failed mid-stream: %s %s", source, e.status, e.message)
         yield _event(error_body(e.status, e.message, e.type, e.param, e.code).model_dump_json())
         return
     except Exception:
