@@ -9,6 +9,10 @@ Each value becomes a numbered placeholder, `[EMAIL_1]`, `[PHONE_2]`, numbered pe
 order first seen across all the messages. The same value always gets the same placeholder, so
 two requests that differ only in their PII mask to the same request and share a cache entry.
 
+A masked request also gets `PLACEHOLDER_NOTE` in its system message (`explain_placeholders`).
+Without it, gpt-oss often treats a placeholder as a blank to fill, or as private data to
+refuse, and the value is lost (docs/decisions.md has the measurements).
+
 Only message `content` is scanned, and only reply text is restored: tool-call arguments and
 other extra fields are left as they are, both ways.
 """
@@ -19,7 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from app.api.schemas import ChatRequest, ChatResponse
+from app.api.schemas import ChatMessage, ChatRequest, ChatResponse
 
 PiiType = Literal["email", "phone", "aadhaar", "card"]
 
@@ -194,6 +198,32 @@ def mask_request(request: ChatRequest) -> Masked:
     if not masker.values:
         return Masked(request, {})
     return Masked(request.model_copy(update={"messages": messages}), masker.values)
+
+
+# The text measured live (scripts/check_pii_live.py): with it, every model tried returned
+# every value; without it, gpt-oss-20b returned 13 to 18 of 22. Change it only after measuring.
+PLACEHOLDER_NOTE = (
+    "Text in square brackets such as [EMAIL_1] or [PHONE_1] stands for a real value the user "
+    "gave, hidden for privacy. Treat it as that value, and wherever the value belongs in your "
+    "reply, copy the placeholder exactly, brackets included."
+)
+
+_INSTRUCTION_ROLES = ("system", "developer")
+
+
+def explain_placeholders(request: ChatRequest) -> ChatRequest:
+    """`request` with `PLACEHOLDER_NOTE` ahead of its first system (or developer) message, or
+    as a new system message first if it has none. Merged, not added: a second system message
+    would take a single-turn request out of the semantic cache."""
+    messages = list(request.messages)
+    for i, m in enumerate(messages):
+        if m.role in _INSTRUCTION_ROLES:
+            content = f"{PLACEHOLDER_NOTE}\n\n{m.content}" if m.content else PLACEHOLDER_NOTE
+            messages[i] = m.model_copy(update={"content": content})
+            break
+    else:
+        messages.insert(0, ChatMessage(role="system", content=PLACEHOLDER_NOTE))
+    return request.model_copy(update={"messages": messages})
 
 
 # What a placeholder looks like. Only those in a request's `values` are restored: one the

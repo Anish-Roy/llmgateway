@@ -22,7 +22,7 @@ from app.cache.key import CACHE_HEADER, storable
 from app.cache.semantic import SEMANTIC
 from app.cache.semantic_store import SemanticCache, SemanticLookup
 from app.cache.store import CacheEntry, ResponseCache
-from app.guardrails.pii import mask_request, restore_response
+from app.guardrails.pii import explain_placeholders, mask_request, restore_response
 from app.routing.registry import Target
 from app.routing.router import ModelRouter, RoutedStream
 from app.usage.recorder import Recording, UsageRecorder
@@ -82,9 +82,12 @@ async def chat_completions(
     # PII is masked before anything else sees the request: from here on the caches (their
     # keys and what they store), the providers and token estimates get placeholders only.
     # Only what's sent to the client gets the real values back, in copies: the objects the
-    # caches store keep the placeholders.
+    # caches store keep the placeholders. A masked request also tells the model what the
+    # placeholders are, or some models drop them.
     masked = mask_request(body)
     body, values = masked.request, masked.values
+    if values:
+        body = explain_placeholders(body)
     recording.masked(masked.types)
 
     # Both kinds of request share entries: the key leaves `stream` out. None when the request

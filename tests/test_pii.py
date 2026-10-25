@@ -5,8 +5,11 @@ import time
 import pytest
 
 from app.api.schemas import ChatMessage, ChatRequest, ChatResponse, Choice
+from app.cache.embedder import embed_text
 from app.guardrails.pii import (
+    PLACEHOLDER_NOTE,
     StreamRestorer,
+    explain_placeholders,
     find_pii,
     luhn_valid,
     mask_request,
@@ -362,3 +365,73 @@ def test_a_restorer_without_values_passes_text_through():
     restorer = StreamRestorer({})
     assert restorer.feed("[EMA") == "[EMA"
     assert restorer.flush() == ""
+
+
+# The note that tells the model what the placeholders are.
+
+
+def test_the_note_becomes_the_system_message_when_there_is_none():
+    request = explain_placeholders(_request("hi [EMAIL_1]"))
+    assert [(m.role, m.content) for m in request.messages] == [
+        ("system", PLACEHOLDER_NOTE),
+        ("user", "hi [EMAIL_1]"),
+    ]
+
+
+@pytest.mark.parametrize("role", ["system", "developer"])
+def test_the_note_joins_the_clients_system_message(role):
+    request = ChatRequest.model_validate(
+        {
+            "model": "fast",
+            "messages": [
+                {"role": role, "content": "Be brief.", "name": "ops"},
+                {"role": "user", "content": "hi [EMAIL_1]"},
+            ],
+        }
+    )
+    explained = explain_placeholders(request)
+    first, user = explained.messages
+    assert (first.role, first.content) == (role, f"{PLACEHOLDER_NOTE}\n\nBe brief.")
+    assert first.model_extra == {"name": "ops"}
+    assert user.content == "hi [EMAIL_1]"
+    # The original is left as it was.
+    assert request.messages[0].content == "Be brief."
+
+
+def test_the_note_joins_only_the_first_system_message():
+    request = ChatRequest.model_validate(
+        {
+            "model": "fast",
+            "messages": [
+                {"role": "user", "content": "hi"},
+                {"role": "system", "content": "A"},
+                {"role": "system", "content": "B"},
+            ],
+        }
+    )
+    contents = [m.content for m in explain_placeholders(request).messages]
+    assert contents == ["hi", f"{PLACEHOLDER_NOTE}\n\nA", "B"]
+
+
+def test_the_note_fills_an_empty_system_message():
+    request = ChatRequest.model_validate(
+        {
+            "model": "fast",
+            "messages": [{"role": "system", "content": ""}, {"role": "user", "content": "x"}],
+        }
+    )
+    assert explain_placeholders(request).messages[0].content == PLACEHOLDER_NOTE
+
+
+def test_the_note_keeps_a_single_turn_request_single_turn():
+    with_system = ChatRequest.model_validate(
+        {
+            "model": "fast",
+            "messages": [
+                {"role": "system", "content": "Be brief."},
+                {"role": "user", "content": "hi [EMAIL_1]"},
+            ],
+        }
+    )
+    for request in (_request("hi [EMAIL_1]"), with_system):
+        assert embed_text(explain_placeholders(request)) == "hi [EMAIL_1]"

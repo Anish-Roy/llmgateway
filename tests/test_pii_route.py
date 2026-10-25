@@ -12,6 +12,7 @@ import uuid
 from collections.abc import AsyncIterator
 
 from app.api.schemas import ChatChunk, ChatRequest, ChunkChoice, Delta, Usage
+from app.guardrails.pii import PLACEHOLDER_NOTE
 from app.providers.base import ProviderError
 from app.providers.mock import MockProvider
 from tests.test_exact_cache import Gateway, events, sdk, streamed_text
@@ -30,8 +31,15 @@ def ask(content: str, *, system: str | None = None, **extra) -> dict:
 
 
 def sent(provider: MockProvider) -> list[list[str | None]]:
-    """The message contents of every request `provider` got."""
-    return [[m.content for m in r.messages] for r in provider.requests]
+    """The message contents of every request `provider` got, without the placeholder note
+    (its own tests are below)."""
+    contents = []
+    for request in provider.requests:
+        texts = [
+            (m.content or "").removeprefix(PLACEHOLDER_NOTE).lstrip("\n") for m in request.messages
+        ]
+        contents.append([t for t in texts if t])
+    return contents
 
 
 def assert_no_raw_values(*things: object) -> None:
@@ -347,3 +355,62 @@ async def test_a_rate_limited_request_is_logged_before_masking():
     assert limited.status_code == 429
     # Refused before masking: no PII was looked for, and none reached anything.
     assert (await gw.rows())[1].pii_types == []
+
+
+# The placeholder note.
+
+
+async def test_a_masked_request_tells_the_model_what_the_placeholders_are():
+    provider = MockProvider()
+    gw = Gateway(("groq", provider))
+
+    await gw.post(ask(f"Mail {EMAIL}"))
+
+    (request,) = provider.requests
+    assert [(m.role, m.content) for m in request.messages] == [
+        ("system", PLACEHOLDER_NOTE),
+        ("user", "Mail [EMAIL_1]"),
+    ]
+
+
+async def test_the_note_joins_the_clients_system_prompt():
+    provider = MockProvider()
+    gw = Gateway(("groq", provider))
+
+    await gw.post(ask(f"Mail {EMAIL}", system="Be brief."))
+
+    (request,) = provider.requests
+    assert [m.content for m in request.messages] == [
+        f"{PLACEHOLDER_NOTE}\n\nBe brief.",
+        "Mail [EMAIL_1]",
+    ]
+
+
+async def test_a_request_without_pii_gets_no_note():
+    provider = MockProvider()
+    gw = Gateway(("groq", provider))
+
+    await gw.post(ask("What is HTTP?", system="Be brief."))
+
+    (request,) = provider.requests
+    assert [m.content for m in request.messages] == ["Be brief.", "What is HTTP?"]
+
+
+async def test_a_noted_request_still_reaches_the_semantic_cache():
+    # The note joins the system message instead of adding one, so the request stays
+    # single-turn and is still embedded.
+    gw = SemanticGateway(
+        embedder=_similar(
+            "What's the capital of France? Reply to [EMAIL_1]",
+            "capital of france? reply to [EMAIL_1]",
+        )
+    )
+
+    await gw.post(
+        ask(f"What's the capital of France? Reply to {EMAIL}", system="Be brief."), headers=OPT_IN
+    )
+    hit = await gw.post(
+        ask("capital of france? reply to neha@mail.org", system="Be brief."), headers=OPT_IN
+    )
+
+    assert hit.headers["x-gateway-cache"] == "semantic"

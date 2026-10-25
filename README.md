@@ -181,7 +181,7 @@ values back, plain or streamed, so a client sees its own data as usual:
 
 ```
 client sends:    Write to priya@example.com and call 98765 43210.
-provider gets:   Write to [EMAIL_1] and call [PHONE_1].
+provider gets:   Write to [EMAIL_1] and call [PHONE_1].   (and a system note on placeholders)
 provider says:   Done: I've drafted a note to [EMAIL_1].
 client gets:     Done: I've drafted a note to priya@example.com.
 ```
@@ -196,9 +196,11 @@ entry, and each gets its own values back.
 streamed): every placeholder a model wrote came back exactly as sent, so restoring by exact
 match works. Gemini 3.5 Flash-Lite returned all 22 values. Groq's gpt-oss-20b returned only
 13 to 18 of 22: it treats a placeholder as a blank to fill or as private data, and refuses
-or makes up a stand-in. In the experiment, a one-line system note explaining the
-placeholders, sent by the client, brought every model to 22 of 22. The gateway doesn't add
-that note itself (details: `docs/decisions.md`).
+or makes up a stand-in. A one-line note explaining the placeholders brought every model to 22
+of 22, so the gateway now adds it to every masked request. It goes ahead of the client's
+system message, or becomes the system message if there's none, and costs 53 tokens.
+Re-measured through the gateway: 22 of 22 on every model (details: `docs/decisions.md`).
+Requests with no PII get no note.
 
 Known limits:
 
@@ -211,8 +213,8 @@ Known limits:
 - **Literal placeholders:** if a user types `[EMAIL_1]` themselves, it's replaced with the
   request's first email.
 - **One spelling restored:** a value written two ways comes back in the spelling first seen.
-- **Dropped placeholders:** a model that drops a placeholder drops the value with it, as
-  gpt-oss does unless the client sends the note.
+- **Dropped placeholders:** a model that drops a placeholder drops the value with it. The note
+  stopped that in every measured run, but there's no guarantee.
 
 ## Layout
 

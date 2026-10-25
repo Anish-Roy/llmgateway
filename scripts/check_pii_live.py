@@ -10,8 +10,9 @@ it came back, was mangled, or was dropped.
 uv run uvicorn app.main:app            # with GROQ_API_KEY / GEMINI_API_KEY in .env
 GATEWAY_API_KEY=gw-... uv run python scripts/check_pii_live.py --model fast
 
-With --note, a system message explains the placeholders first: to measure whether telling
-the model helps, before the gateway does it.
+With --note, the client sends a system message explaining the placeholders. That's how the
+note was measured before the gateway sent it itself; now that it does, --note adds a second
+copy, so leave it off to measure the gateway as it is.
 
 The x-gateway-provider header says who answered. To check Gemini, run a second gateway with
 GROQ_API_KEY blanked, so `fast` falls through to it, and point --base-url there:
@@ -23,6 +24,7 @@ GATEWAY_API_KEY=gw-... uv run python scripts/check_pii_live.py --base-url http:/
 import argparse
 import os
 import re
+import time
 from collections import Counter
 
 from openai import OpenAI
@@ -68,7 +70,7 @@ PROMPTS = [
     ),
 ]
 
-# Sent client-side with --note. The gateway masks nothing in it.
+# Sent by the client with --note: the text the gateway now sends itself (PLACEHOLDER_NOTE).
 NOTE = (
     "Text in square brackets such as [EMAIL_1] or [PHONE_1] stands for a real value the user "
     "gave, hidden for privacy. Treat it as that value, and wherever the value belongs in your "
@@ -90,6 +92,9 @@ def main() -> None:
     )
     parser.add_argument("--note", action="store_true", help="explain placeholders first")
     parser.add_argument("--show", action="store_true", help="print every reply")
+    parser.add_argument(
+        "--pause", type=float, default=0, help="seconds between calls (Gemini's free tier: 4)"
+    )
     args = parser.parse_args()
 
     if not args.api_key:
@@ -113,6 +118,7 @@ def main() -> None:
             "max_tokens": 400,
         }
         for mode in ("plain", "stream"):
+            time.sleep(args.pause)
             if mode == "plain":
                 raw = client.chat.completions.with_raw_response.create(**request)
                 reply = raw.parse().choices[0].message.content or ""

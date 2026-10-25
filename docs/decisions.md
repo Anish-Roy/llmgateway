@@ -982,6 +982,32 @@ One entry per phase: what was chosen, and why.
     value, in every run.
   - **Small sample:** 16 calls per run. The gap on gpt-oss-20b (13 to 18 against 22 three
     times) is large next to its run-to-run spread, but it's still 3 runs.
+- **So the gateway sends the note itself, on masked requests only** (`explain_placeholders`).
+  - **The text is the one measured** (`PLACEHOLDER_NOTE`), word for word.
+  - **Only masked requests get it.** A request with no PII reaches the provider byte for byte
+    as before, and so do its cache keys.
+  - **Merged, not added:** it goes ahead of the client's first system (or developer) message,
+    or becomes the system message if there's none. A second system message would take a
+    single-turn request out of the semantic cache (`embed_text` allows one), and Gemini joins
+    them into one `systemInstruction` anyway.
+  - **Cost:** 53 tokens (o200k) per masked request, about $0.000004 on gpt-oss-20b and
+    $0.000016 on Flash-Lite at list price.
+  - **Cache keys:** the note is part of the masked request, so the keys include it. Entries
+    stored for PII requests before it existed simply stop matching.
+- **Re-measured through the gateway, with the note sent by the gateway and none from the
+  client** (2026-10-25):
+
+  | Model (alias) | Values back |
+  |---|---|
+  | Groq gpt-oss-20b (`fast`) | 22, 22, 22 of 22 (3 runs) |
+  | Groq gpt-oss-120b (`strong`) | 22 of 22 |
+  | Gemini 3.5 Flash-Lite (`fast` with Groq off) | 22 of 22 |
+
+  - **One `fast` run was thrown out:** it ran into Groq's 30 requests a minute, and 10 of its
+    16 calls fell back to Gemini.
+  - **A Gemini run was cut short:** those fallbacks used up Gemini's 15 a minute.
+  - **The reruns were paced** (`--pause`). Only 1 call in the kept `fast` runs was served by
+    Gemini.
 - **Checked live on the real server and Postgres:**
   - **Cache hits:** a PII request at temperature 0 was a miss, then an exact hit. The hit and
     a streamed replay both came back with the real values.
@@ -998,7 +1024,8 @@ One entry per phase: what was chosen, and why.
   - **Coverage:** only the four kinds. Names, addresses, PAN, IFSC, passport numbers and
     non-Indian phone formats pass through.
   - **One spelling restored:** a value written two ways comes back in the spelling first seen.
-  - **gpt-oss without the note:** it drops placeholders, as measured above.
+  - **Dropped placeholders:** a model can still drop one, and the value with it. With the
+    note, none did in the runs above.
 - **Phase 8 "done when": unit tests cover positive and negative cases (2026-10-25).**
   - **Positive cases (`tests/test_pii.py`):** every phone, Aadhaar and card format, and several
     in one text.
@@ -1010,8 +1037,8 @@ One entry per phase: what was chosen, and why.
     - mask before the provider, `[EMAIL_1]`-style: `mask_request`, called in
       `app/api/routes.py`;
     - put the real values back (always on): `restore_response`, and `StreamRestorer` in
-      `app/api/sse.py`;
+      `app/api/sse.py`, with `PLACEHOLDER_NOTE` so the model keeps the placeholders;
     - log that masking happened and which types: `request_logs.pii_types`;
     - mask before the cache: the route masks before either cache key is computed, and
       `tests/test_pii_route.py` checks both tables after every path.
-  - **Tests:** 699 pass, Postgres included.
+  - **Tests:** 709 pass, Postgres included.
