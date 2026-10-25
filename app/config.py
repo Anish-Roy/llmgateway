@@ -1,8 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import SecretStr
+from pydantic import BeforeValidator, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,7 +12,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_env: Literal["dev", "test", "prod"] = "dev"
-    log_level: str = "INFO"
+    # Any case: "debug" works too. An unknown level stops the app at startup.
+    log_level: Annotated[
+        Literal["DEBUG", "INFO", "WARNING", "ERROR"], BeforeValidator(lambda v: str(v).upper())
+    ] = "INFO"
 
     database_url: str = "postgresql://gateway:gateway@localhost:5433/gateway"
 

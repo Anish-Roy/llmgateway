@@ -3,7 +3,6 @@
 import asyncio
 
 import httpx
-import pytest
 
 from app.api.schemas import ChatMessage, ChatRequest
 from app.providers.base import ProviderError
@@ -143,9 +142,3 @@ def test_failed_encoding_load_keeps_the_fallback(monkeypatch):
 
     assert tokens._encoding is None
     assert tokens.count_tokens("abcdefgh") == 2
-
-
-@pytest.fixture(autouse=True)
-def _no_real_encoding(monkeypatch):
-    # Tests never download tiktoken's encoding; counts are chars/4 unless a test sets one.
-    monkeypatch.setattr(tokens, "_encoding", None)
