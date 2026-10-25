@@ -22,6 +22,7 @@ from app.cache.key import CACHE_HEADER, storable
 from app.cache.semantic import SEMANTIC
 from app.cache.semantic_store import SemanticCache, SemanticLookup
 from app.cache.store import CacheEntry, ResponseCache
+from app.guardrails.pii import mask_request
 from app.routing.registry import Target
 from app.routing.router import ModelRouter, RoutedStream
 from app.usage.recorder import Recording, UsageRecorder
@@ -77,6 +78,10 @@ async def chat_completions(
         recording.failed(e)
         raise
     limit_headers = rate_limit_headers(reservation.status)
+
+    # PII is masked before anything else sees the request: from here on the caches (their
+    # keys and what they store), the providers and token estimates get placeholders only.
+    body = mask_request(body).request
 
     # Both kinds of request share entries: the key leaves `stream` out. None when the request
     # isn't cacheable or the client turned the cache off.

@@ -12,6 +12,7 @@ two requests that differ only in their PII mask to the same request and share a 
 Only message `content` is scanned: tool-call arguments and other extra fields aren't.
 """
 
+import bisect
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -71,8 +72,12 @@ def _digits(text: str) -> str:
 
 
 # Every pattern refuses to start or end next to a digit, so none is found inside a longer
-# number: an order ID's last ten digits aren't a phone.
-_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+# number: an order ID's last ten digits aren't a phone. The email pattern only starts where a
+# run of address characters does: tried from inside one, it would rescan the run from every
+# character, and a long word (or base64) with no "@" would take quadratic time.
+_EMAIL = re.compile(
+    r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}"
+)
 # Ten digits starting 6-9, written whole, 5+5 or 3+3+4, after +91, 0091, 91 or 0 if any.
 _PHONE = re.compile(
     r"(?<!\d)(?:(?:\+|00)?91[ -]?|0)?(?:[6-9]\d{4}[ -]?\d{5}|[6-9]\d{2}[ -]?\d{3}[ -]?\d{4})(?!\d)"
@@ -115,15 +120,20 @@ class PiiMatch:
 
 def find_pii(text: str) -> list[PiiMatch]:
     """Every piece of PII in `text`, in order, none overlapping."""
+    # Sorted by start. The spans never overlap, so they're sorted by end too, and a new match
+    # can only overlap its neighbours: checking those keeps a text full of matches fast.
     found: list[PiiMatch] = []
     for detector in _DETECTORS:
         for m in detector.pattern.finditer(text):
             if not detector.valid(m.group()):
                 continue
-            if any(m.start() < f.end and f.start < m.end() for f in found):
+            i = bisect.bisect_left(found, m.start(), key=lambda f: f.start)
+            if i > 0 and found[i - 1].end > m.start():
                 continue
-            found.append(PiiMatch(detector.type, m.start(), m.end()))
-    return sorted(found, key=lambda f: f.start)
+            if i < len(found) and found[i].start < m.end():
+                continue
+            found.insert(i, PiiMatch(detector.type, m.start(), m.end()))
+    return found
 
 
 @dataclass(frozen=True)

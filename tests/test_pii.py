@@ -1,5 +1,7 @@
 """PII masking: the detectors, their checksums, and the placeholders a request is masked with."""
 
+import time
+
 import pytest
 
 from app.api.schemas import ChatRequest
@@ -231,3 +233,25 @@ def test_doesnt_change_the_original_request():
     request = _request("hi a@b.com")
     mask_request(request)
     assert request.messages[0].content == "hi a@b.com"
+
+
+# Time: every request is scanned, so a long one must not take quadratic time.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A long word with no "@" once rescanned itself from every character.
+        "a" * 200_000,
+        "1" * 200_000,
+        "a@" + "b." * 100_000,
+        # Many matches once checked each against every earlier one.
+        "a@b.com 9876543210 4111111111111111 234567890124 " * 4_000,
+    ],
+    ids=["letters", "digits", "dotted-domain", "many-matches"],
+)
+def test_long_texts_take_linear_time(text):
+    started = time.perf_counter()
+    find_pii(text)
+    # About 0.03 s each; quadratic took seconds at this size.
+    assert time.perf_counter() - started < 1

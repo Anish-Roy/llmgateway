@@ -45,10 +45,13 @@ class MockProvider:
         self.chunk_latency_s = chunk_latency_s
         self.fail_after_chunks = fail_after_chunks
         self.calls = 0
+        # Every request it was sent, as it got it. Tests check what reached the provider.
+        self.requests: list[ChatRequest] = []
         # Streams that were closed, finished or not. Tests check upstream connections are freed.
         self.closed_streams = 0
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
+        self.requests.append(request)
         await self._start()
         text = self._text(request)
         return ChatResponse(
@@ -58,6 +61,7 @@ class MockProvider:
         )
 
     async def stream(self, request: ChatRequest) -> AsyncIterator[ChatChunk]:
+        self.requests.append(request)
         try:
             await self._start()
             text = self._text(request)
