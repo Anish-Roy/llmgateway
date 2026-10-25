@@ -73,7 +73,8 @@ curl -sN localhost:8000/v1/chat/completions -H 'content-type: application/json' 
   -d '{"model": "demo-midstream", "stream": true, "messages": [{"role": "user", "content": "hi"}]}'
 ```
 
-Groq and the mock provider stream. Gemini streaming comes next in Phase 3.
+Every provider streams: Groq passes its OpenAI-format chunks through, and Gemini's
+`streamGenerateContent` events are translated into the same format.
 
 ## Layout
 

@@ -182,9 +182,6 @@ One entry per phase: what was chosen, and why.
 - **The mock streams like OpenAI** (a role chunk, a word per chunk, a finish chunk, a usage
   chunk). Its `fail_after_chunks` option separates the two cases: 1 fails after the role chunk
   (still replaceable), 2 or more fails mid-answer. `demo-midstream` uses it.
-- **Until its adapter streams, Gemini returns a provider-specific 400** for `stream=True`.
-  The router moves on to a provider that can stream, and the client gets an honest 400 if none
-  can.
 - **Groq's stream format was checked live (2026-10-25) before writing the adapter.**
   - The first chunk is `role: assistant` with `content: ""`, as assumed above.
   - Errors come before the stream starts, as normal JSON (404 `model_not_found`, 400 for a
@@ -215,3 +212,41 @@ One entry per phase: what was chosen, and why.
     0.5–0.65 s.
   - `include_usage` returned the usage chunk.
   - A client that disconnected after 5 chunks of a long story left no errors in the server log.
+- **Gemini's stream format was checked live (2026-10-25) before writing the adapter.**
+  - `streamGenerateContent` needs `?alt=sse`; without it the reply is one JSON array sent bit
+    by bit.
+  - Each event is a whole `GenerateContentResponse` holding the next piece of text. The last
+    one has the `finishReason`, often with an empty part that only carries a
+    `thoughtSignature`. There is no `[DONE]`.
+  - `usageMetadata` is on every event and holds running totals (completion tokens went 2 → 6
+    over a stream), so the adapter keeps the last one rather than adding them up.
+    `thoughtsTokenCount` grows the same way and counts as output, as in non-streamed replies.
+  - Errors (503 "high demand", 404, a 400 for a bad temperature) come before the stream as a
+    normal JSON body, even though the content-type says `text/event-stream`.
+  - Thought parts (`thought: true`) only appear with `includeThoughts`, which the adapter
+    never sends. They're filtered anyway.
+- **A Gemini stream is complete once a `finishReason` arrives.** If the connection closes before
+  that, it's a 502 "ended early", the same rule as Groq's missing `[DONE]`.
+- **The translator puts `role: "assistant"` on the first chunk it sends,** as OpenAI and Groq
+  do. Gemini never sends a role.
+- **Events with nothing for the client send no chunk.** That covers thought-only events, the
+  empty part with a `thoughtSignature`, and usage-only events. Thinking time therefore can't
+  commit the router, and fallback stays possible until real text arrives. Usage goes out as
+  its own `choices: []` chunk after the finish, which is the shape the SSE layer filters on.
+- **A blocked prompt (no candidates, a `promptFeedback.blockReason`) is a finish chunk with
+  `content_filter`.** It's a real answer, as in Phase 2, so it commits rather than falling back.
+- **`to_gemini` accepts `stream_options` instead of rejecting it.** It was on the "unsupported
+  extras" path, so every client sending `include_usage` would have skipped Gemini with a
+  provider-specific 400.
+- **Both adapters now share the same building blocks:** `_check_key`, `_headers` and a
+  `_transport_errors()` context manager. The context manager wraps the request and, for
+  streams, every read, so a timeout between events is a 504 there too.
+- **The live "done when" for Gemini (2026-10-25)** used a scratch registry (`MODELS_FILE`),
+  because Gemini is second in both aliases and never streams while Groq is up.
+  - With Gemini first, the openai SDK streamed with the first token in about 1.9 s.
+  - With a Groq model the key can't use in front, the request fell back to Gemini (2
+    attempts, `x-gateway-fallback: true`), and `include_usage` returned the usage chunk.
+  - A client that disconnected 1 s into a 1500-word story, mid-generation, left a clean
+    server log.
+  - The same fallback is covered offline in `tests/test_gemini_stream.py`: Groq returns a 503
+    before the first token, then Gemini streams through the real adapters and the SDK.
