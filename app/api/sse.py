@@ -14,7 +14,7 @@ from starlette.types import Receive, Scope, Send
 
 from app.api.errors import error_body
 from app.providers.base import ProviderError
-from app.routing.router import RoutedStream
+from app.routing.router import RoutedStream, StreamRecord
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +50,24 @@ class _ClosingStreamingResponse(StreamingResponse):
 
 
 def sse_response(
-    stream: RoutedStream, *, include_usage: bool, headers: Mapping[str, str]
+    stream: RoutedStream,
+    *,
+    include_usage: bool,
+    headers: Mapping[str, str],
+    on_finish: Callable[[StreamRecord], None] | None = None,
 ) -> StreamingResponse:
+    """`on_finish` gets the stream's complete record once the stream is closed, however it
+    ended (finished, failed, or the client left)."""
+
+    async def close() -> None:
+        try:
+            await stream.aclose()
+        finally:
+            if on_finish is not None:
+                on_finish(stream.record)
+
     return _ClosingStreamingResponse(
-        _events(stream, include_usage), stream.aclose, {**SSE_HEADERS, **headers}
+        _events(stream, include_usage), close, {**SSE_HEADERS, **headers}
     )
 
 

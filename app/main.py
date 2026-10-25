@@ -10,6 +10,7 @@ from app.api.errors import install_error_handlers
 from app.api.routes import router
 from app.auth.authenticator import Authenticator
 from app.auth.keys import PostgresKeyStore
+from app.auth.rate_limit import RateLimiter
 from app.config import Settings, get_settings
 from app.db.pool import open_pool
 from app.providers.base import Provider
@@ -90,6 +91,10 @@ def create_app() -> FastAPI:
             yield
 
     app = FastAPI(title="LLM Gateway", version=__version__, lifespan=lifespan)
+    # In memory and nothing to open or close, so it's built here rather than in the lifespan.
+    app.state.rate_limiter = RateLimiter(
+        default_completion_tokens=settings.rate_limit_default_completion_tokens
+    )
     install_error_handlers(app)
     app.include_router(router)
 

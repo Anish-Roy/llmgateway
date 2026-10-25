@@ -399,3 +399,34 @@ One entry per phase: what was chosen, and why.
 - **`estimate_tokens` ignores a `max_completion_tokens` or `n` that isn't a positive integer.**
   The gateway doesn't validate them; the provider does. Crashing on `"n": "two"` would turn the
   provider's honest 400 into a 500. `True` isn't 1 here, even though `bool` is an `int` in Python.
+- **The order is auth → body validation → rate limit → router.** A request with a bad body gets
+  its 400 before anything is reserved, so it costs the key nothing. Rate limiting runs in the
+  route rather than as a dependency, because the estimate needs the parsed body. `/v1/models`
+  isn't limited: it calls no provider, and OpenAI doesn't count it either.
+- **Every way a request ends settles its reservation:**
+  - a reply: its reported usage, or an estimate if the provider reported none;
+  - every provider failing (including before a stream's first token): 0;
+  - a stream: when it's closed, with `StreamRecord.usage`. That's the provider's count, or the
+    estimate for a stream that was cut short or that the client left. `sse_response` got an
+    `on_finish` hook that runs after the upstream stream is closed, inside the `finally` that
+    already runs however the response ends.
+  A test covers each path with a frozen clock and checks the bucket level exactly.
+- **The headers are OpenAI's:** `x-ratelimit-{limit,remaining,reset}-{requests,tokens}`. Names
+  and the reset format (`"1s"`, `"6m0s"`) were checked against OpenAI's rate-limit guide on
+  2026-10-25. Reset is the time until the bucket is full again, rounded up to the millisecond.
+  The headers come on replies and streams and on the gateway's own 429s. They are reported at
+  admission, so the remaining tokens still include the reservation.
+- **A request that fails after admission gets no rate-limit headers.** Its error comes from
+  the shared error handlers, which don't know about the reservation. Clients that need them
+  read them from the next reply or 429.
+- **The gateway's 429 copies OpenAI's own: `type` is `"requests"` or `"tokens"`, `code` is
+  `rate_limit_exceeded`.** That tells it apart from a provider's 429 passed through (type
+  `rate_limit_exceeded`, no `x-ratelimit-*` headers). It names which limit, the key's prefix and
+  the wait.
+- **It sends `retry-after-ms` as well as `Retry-After`.** The openai SDK reads `retry-after-ms`
+  first, so it waits the exact time instead of the next whole second. `Retry-After` is rounded
+  up, so clients that only read it are never early. A test lets the SDK (`max_retries=2`) hit a
+  real 429 and checks that it waited and then got in.
+- **The default reservation for a request without `max_tokens` is configurable**
+  (`RATE_LIMIT_DEFAULT_COMPLETION_TOKENS`, 1024). Checked live: a stream with no `max_tokens`
+  held about 1,030 tokens while it ran, and the next reply showed them back once it was settled.

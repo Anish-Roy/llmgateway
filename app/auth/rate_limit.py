@@ -126,11 +126,20 @@ class Reservation:
 
 
 class RateLimiter:
-    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self,
+        clock: Callable[[], float] = time.monotonic,
+        default_completion_tokens: int = DEFAULT_COMPLETION_TOKENS,
+    ) -> None:
         self.clock = clock
+        self.default_completion_tokens = default_completion_tokens
         # Key id -> bucket. One entry per key that has made a request: no eviction needed.
         self._requests: dict[int, TokenBucket] = {}
         self._tokens: dict[int, TokenBucket] = {}
+
+    def reserve(self, key: ApiKey, request: ChatRequest) -> Reservation:
+        """Admits a chat request, reserving the most it may use (see `estimate_tokens`)."""
+        return self.acquire(key, estimate_tokens(request, self.default_completion_tokens))
 
     def acquire(self, key: ApiKey, tokens: int) -> Reservation:
         """Admits a request that may use `tokens`, or raises RateLimitExceeded.

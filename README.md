@@ -51,6 +51,13 @@ uv run python -m scripts.create_key list
 uv run python -m scripts.create_key revoke 1     # applies within KEY_CACHE_TTL_S (30 s)
 ```
 
+Each key has a requests-per-minute and a tokens-per-minute limit. Over either, the gateway
+answers 429 with `Retry-After` (the openai SDK waits and retries by itself), and every reply
+carries OpenAI's `x-ratelimit-limit-*`, `x-ratelimit-remaining-*` and `x-ratelimit-reset-*`
+headers for requests and tokens. A request's tokens are reserved up front (prompt plus
+`max_tokens`, or 1024 without it) and corrected to the real usage when it ends. Limits are kept
+in memory, so run the gateway as a single process.
+
 Try it with the official `openai` SDK (needs `GROQ_API_KEY` and `GEMINI_API_KEY` in `.env`):
 
 ```bash

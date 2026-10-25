@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # a changed limit takes to apply, on a running gateway.
     key_cache_ttl_s: float = 30.0
 
+    # Tokens reserved for the reply when a request sets no max_tokens, until the real usage
+    # is known. Higher is stricter on keys that send many such requests at once.
+    rate_limit_default_completion_tokens: int = 1024
+
     # Model aliases and the providers behind them. See config/models.yaml.
     models_file: Path = Path(__file__).resolve().parent.parent / "config" / "models.yaml"
 

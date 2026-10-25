@@ -7,8 +7,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
+from app.api.rate_limit_headers import duration, rate_limit_headers, retry_after_headers
 from app.api.schemas import ErrorDetail, ErrorResponse
 from app.auth.authenticator import AuthError, KeyStoreUnavailable
+from app.auth.rate_limit import RateLimitExceeded
 from app.providers.base import ProviderError
 from app.routing.router import ModelNotFoundError
 
@@ -76,6 +78,26 @@ async def _key_store_unavailable(request: Request, exc: KeyStoreUnavailable) -> 
     return error_response(503, str(exc), "api_error", code="service_unavailable")
 
 
+async def _rate_limited(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    # OpenAI's shape for its own limits: `type` says which limit ("requests" or "tokens"),
+    # which also tells this 429 apart from a provider's (type "rate_limit_exceeded").
+    key = request.state.api_key
+    limits = {"requests": "requests per minute (RPM)", "tokens": "tokens per minute (TPM)"}
+    bucket = {"requests": exc.status.requests, "tokens": exc.status.tokens}
+    reached = "; ".join(
+        f"{limits[name]}: limit {bucket[name].limit}, remaining {bucket[name].remaining}"
+        for name in exc.limited
+    )
+    message = (
+        f"Rate limit reached on API key {key.key_prefix}... for {reached}. "
+        f"Please try again in {duration(exc.retry_after_s)}."
+    )
+    response = error_response(429, message, exc.limited[0], code="rate_limit_exceeded")
+    response.headers.update(rate_limit_headers(exc.status))
+    response.headers.update(retry_after_headers(exc.retry_after_s))
+    return response
+
+
 async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     # FastAPI's default is a 422 with {"detail": [...]}. OpenAI answers bad input with a 400.
     first = exc.errors()[0]
@@ -99,6 +121,7 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ModelNotFoundError, _model_not_found)
     app.add_exception_handler(AuthError, _auth_error)
     app.add_exception_handler(KeyStoreUnavailable, _key_store_unavailable)
+    app.add_exception_handler(RateLimitExceeded, _rate_limited)
     app.add_exception_handler(RequestValidationError, _validation_error)
     app.add_exception_handler(HTTPException, _http_error)
     app.add_exception_handler(Exception, _unhandled_error)
