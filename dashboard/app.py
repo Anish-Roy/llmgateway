@@ -288,7 +288,7 @@ with mix_col:
                     alt.Tooltip("fallbacks:Q", title="As a fallback"),
                     alt.Tooltip("spend_usd:Q", title="Spend", format="$.6f"),
                 ],
-            ).properties(height=max(120, 36 * len(mix))),
+            ).properties(height=60 + 32 * len(mix)),
             width="stretch",
         )
         st.caption(
