@@ -3,7 +3,7 @@
 An OpenAI-compatible proxy in front of multiple LLM providers, with fallback, per-key rate
 limits, exact and semantic caching, PII masking and a cost dashboard.
 
-Status: Phase 1 (non-streaming proxy to Groq, plus a mock provider). See [plan.md](plan.md) for the roadmap.
+Status: Phase 2 in progress (model registry with aliases; Gemini and fallback next). See [plan.md](plan.md) for the roadmap.
 
 ## Quick start
 
@@ -16,11 +16,14 @@ uv run pytest
 uv run ruff check .
 ```
 
-Try it with the official `openai` SDK (needs `GROQ_API_KEY` in `.env`, or set `PROVIDER=mock`
-to run without any keys):
+Clients ask for a model **alias**, not a vendor model. Aliases and the providers behind them
+live in [config/models.yaml](config/models.yaml); `fast` goes to Groq, and `mock` needs no keys.
+
+Try it with the official `openai` SDK (`fast` needs `GROQ_API_KEY` in `.env`):
 
 ```bash
-uv run python scripts/smoke_openai_sdk.py
+uv run python scripts/smoke_openai_sdk.py                # model "fast"
+uv run python scripts/smoke_openai_sdk.py --model mock   # no keys needed
 ```
 
 ## Layout

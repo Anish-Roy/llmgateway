@@ -9,6 +9,7 @@ from starlette.exceptions import HTTPException
 
 from app.api.schemas import ErrorDetail, ErrorResponse
 from app.providers.base import ProviderError
+from app.routing.router import ModelNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,13 @@ async def _provider_error(request: Request, exc: ProviderError) -> JSONResponse:
     return error_response(exc.status, exc.message, exc.type, exc.param, exc.code)
 
 
+async def _model_not_found(request: Request, exc: ModelNotFoundError) -> JSONResponse:
+    # OpenAI's answer to an unknown model: a 404 the SDK raises as NotFoundError.
+    return error_response(
+        404, str(exc), "invalid_request_error", param="model", code="model_not_found"
+    )
+
+
 async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     # FastAPI's default is a 422 with {"detail": [...]}. OpenAI answers bad input with a 400.
     first = exc.errors()[0]
@@ -62,6 +70,7 @@ async def _unhandled_error(request: Request, exc: Exception) -> JSONResponse:
 
 def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ProviderError, _provider_error)
+    app.add_exception_handler(ModelNotFoundError, _model_not_found)
     app.add_exception_handler(RequestValidationError, _validation_error)
     app.add_exception_handler(HTTPException, _http_error)
     app.add_exception_handler(Exception, _unhandled_error)

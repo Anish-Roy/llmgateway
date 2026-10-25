@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import SecretStr
@@ -21,10 +22,8 @@ class Settings(BaseSettings):
 
     request_timeout_s: float = 30.0
 
-    # Which provider serves /v1/chat/completions. "mock" needs no keys (demos, local dev).
-    provider: Literal["groq", "mock"] = "groq"
-    mock_latency_s: float = 0.0
-    mock_failure_rate: float = 0.0
+    # Model aliases and the providers behind them. See config/models.yaml.
+    models_file: Path = Path(__file__).resolve().parent.parent / "config" / "models.yaml"
 
 
 @lru_cache

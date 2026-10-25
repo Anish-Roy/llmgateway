@@ -12,7 +12,7 @@ from openai import OpenAI
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://localhost:8000/v1")
-    parser.add_argument("--model", default="llama-3.1-8b-instant")
+    parser.add_argument("--model", default="fast", help="an alias from config/models.yaml")
     parser.add_argument("--prompt", default="Say hello in five words.")
     args = parser.parse_args()
 

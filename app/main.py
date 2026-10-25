@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -11,15 +12,32 @@ from app.config import Settings, get_settings
 from app.providers.base import Provider
 from app.providers.groq import GroqProvider
 from app.providers.mock import MockProvider
+from app.routing.registry import GroqSpec, MockSpec, RegistryConfig, load_registry
+from app.routing.router import ModelRouter
+
+logger = logging.getLogger(__name__)
 
 
-def build_provider(settings: Settings, client: httpx.AsyncClient) -> Provider:
-    if settings.provider == "mock":
-        return MockProvider(
-            latency_s=settings.mock_latency_s, failure_rate=settings.mock_failure_rate
-        )
-    key = settings.groq_api_key.get_secret_value() if settings.groq_api_key else None
-    return GroqProvider(client, key)
+def build_providers(
+    config: RegistryConfig, settings: Settings, client: httpx.AsyncClient
+) -> dict[str, Provider]:
+    """One instance per entry in the registry's `providers`. Ones missing a key are left out."""
+    providers: dict[str, Provider] = {}
+    for name, spec in config.providers.items():
+        match spec:
+            case MockSpec():
+                providers[name] = MockProvider(
+                    reply=spec.reply,
+                    latency_s=spec.latency_s,
+                    failure_rate=spec.failure_rate,
+                    fail_status=spec.fail_status,
+                )
+            case GroqSpec():
+                if not settings.groq_api_key:
+                    logger.warning("GROQ_API_KEY is not set: skipping provider %r", name)
+                    continue
+                providers[name] = GroqProvider(client, settings.groq_api_key.get_secret_value())
+    return providers
 
 
 def create_app() -> FastAPI:
@@ -27,9 +45,12 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Read and validate the registry at startup, so a bad file stops the app right away.
+        config = load_registry(settings.models_file)
         # One pooled HTTP client for all provider calls, closed on shutdown.
         async with httpx.AsyncClient(timeout=settings.request_timeout_s) as client:
-            app.state.provider = build_provider(settings, client)
+            providers = build_providers(config, settings, client)
+            app.state.model_router = ModelRouter(config.aliases, providers)
             yield
 
     app = FastAPI(title="LLM Gateway", version=__version__, lifespan=lifespan)

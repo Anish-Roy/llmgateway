@@ -43,3 +43,23 @@ One entry per phase: what was chosen, and why.
 - **A provider 401/403 becomes a 502.** It means the gateway's own provider key is bad; passing
   the 401 through would tell the client their key is wrong.
 - **No auth yet.** The SDK requires an `api_key`, which the gateway ignores until Phase 4.
+
+## Phase 2: second provider and fallback
+
+- **The model registry is a YAML file (`config/models.yaml`), checked with Pydantic at startup.**
+  Models can change without code changes, and Phase 5's pricing table can sit next to it.
+  `extra="forbid"` everywhere, so a typo in a provider option stops the app instead of being
+  ignored.
+- **Clients send an alias; targets are `provider/model`, split on the first slash only.**
+  Provider model names can contain slashes. An unknown alias gets OpenAI's 404
+  `model_not_found`, which the SDK raises as `NotFoundError`.
+- **The response `model` is the model that actually answered, not the alias.** OpenAI does the
+  same (`gpt-4o` → `gpt-4o-2024-08-06`). `x-gateway-provider` names the registry entry that
+  served the request.
+- **Providers are named instances, not just types.** `flaky: {type: mock, failure_rate: 1.0}`
+  sits next to `mock`, which is how the fallback demo works without breaking a real provider.
+- **A provider with no API key is skipped at startup, with a warning.** Its targets are dropped
+  from every alias. An alias left with none returns a 503 (a deployment problem, not a client
+  one), not a 404.
+- **The router passes the concrete model with `request.model_copy(update=...)`,** so the
+  `Provider` protocol didn't change and adapters never see aliases.

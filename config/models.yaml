@@ -1,0 +1,19 @@
+# Model registry. Clients send an alias as `model`; the gateway picks the provider and model.
+#
+# providers: named provider instances. `type` picks the adapter; the other keys are its options.
+#            A provider whose API key isn't set is skipped at startup, with a warning.
+# aliases:   alias -> ordered list of "provider/model". The first entry serves the request;
+#            later entries are fallbacks (Phase 2). The text after the first "/" is the
+#            provider's own model name, so it may contain more slashes.
+
+providers:
+  groq:
+    type: groq
+  mock:
+    type: mock
+
+aliases:
+  fast:
+    - groq/llama-3.1-8b-instant
+  mock:
+    - mock/mock-model

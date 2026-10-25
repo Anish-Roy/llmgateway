@@ -4,14 +4,19 @@ import httpx2
 import openai
 import pytest
 
-from app.api.routes import get_provider
+from app.api.routes import get_model_router
 from app.main import create_app
 from app.providers.mock import MockProvider
+from app.routing.registry import Target
+from app.routing.router import ModelRouter
 
 
 def make_client(provider: MockProvider) -> openai.AsyncOpenAI:
     app = create_app()
-    app.dependency_overrides[get_provider] = lambda: provider
+    model_router = ModelRouter(
+        {"mock-model": [Target(provider="mock", model="mock-model")]}, {"mock": provider}
+    )
+    app.dependency_overrides[get_model_router] = lambda: model_router
     # The openai SDK is built on httpx2. ASGITransport calls the app directly: no server or network.
     http_client = httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app))
     return openai.AsyncOpenAI(
@@ -96,3 +101,27 @@ async def test_stream_true_is_rejected_until_phase_3():
 
     assert exc_info.value.body["param"] == "stream"
     assert provider.calls == 0
+
+
+async def test_unknown_model_raises_not_found():
+    provider = MockProvider()
+    client = make_client(provider)
+
+    with pytest.raises(openai.NotFoundError) as exc_info:
+        await client.chat.completions.create(
+            model="gpt-nope", messages=[{"role": "user", "content": "hi"}]
+        )
+
+    assert exc_info.value.body["code"] == "model_not_found"
+    assert exc_info.value.body["param"] == "model"
+    assert provider.calls == 0
+
+
+async def test_response_names_the_provider_that_served_it():
+    client = make_client(MockProvider())
+
+    raw = await client.chat.completions.with_raw_response.create(
+        model="mock-model", messages=[{"role": "user", "content": "hi"}]
+    )
+
+    assert raw.headers["x-gateway-provider"] == "mock"
