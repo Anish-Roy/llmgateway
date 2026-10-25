@@ -33,6 +33,7 @@ def test_schema_files_run_in_name_order():
     assert "001_api_keys.sql" in names
     assert "002_request_logs.sql" in names
     assert "003_response_cache.sql" in names
+    assert "004_semantic_cache.sql" in names
 
 
 def test_migrations_create_the_api_keys_table(pg_conninfo):

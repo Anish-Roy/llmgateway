@@ -757,3 +757,30 @@ One entry per phase: what was chosen, and why.
 - **A different embedding model wasn't tried.** Word-order swaps fool pooled sentence
   embeddings in general, and the plan names MiniLM. Running bge-small or mpnet through the
   same script is the cheap next check if the false-hit rate ever needs to come down.
+- **Semantic entries are scoped to the API key that stored them** (`semantic_cache.key_id`),
+  unlike the exact cache. An exact hit returns an answer to the very text the caller sent,
+  so sharing it leaks nothing. A semantic hit hands one question the answer to *another*,
+  and a single-turn prompt can carry its own data ("summarise this contract: ..."); across
+  teams, that leaks. Scoping costs nothing in the measured numbers, because the experiment
+  and the Phase 11 replay each run under one key. It does cost hits on a gateway shared by
+  many keys asking the same things; that's the price of not leaking.
+- **Migration 004 creates `semantic_cache`, a table of its own, not columns on
+  `response_cache`.** The two have different keys, and only this one needs a vector.
+  - `entry_key` = SHA-256 of key, context and prompt, so the same question in the same
+    context replaces its row instead of piling up copies.
+  - `context_hash` = SHA-256 of everything but the user message (alias, system prompt, every
+    option the model sees), matched exactly. The plan said "same alias and system prompt";
+    that alone would let a paraphrase sent with another `max_tokens`, `stop` or
+    `response_format` get an answer made for different settings. Step 4 computes it.
+  - `prompt` keeps the embedded text, because the numbers guard compares it at lookup.
+  - `embedding vector(384)`, cosine distance; a test pins 384 to the embedder's width.
+  - The migration runs `CREATE EXTENSION IF NOT EXISTS vector` itself.
+    `docker/postgres/init.sql` only runs on a fresh local volume, and Neon or Supabase never
+    run it.
+- **An HNSW index on the embedding, plus btree on (key_id, context_hash) and on expires_at.**
+  HNSW fetches its nearest candidates first (`ef_search`, 40) and only then applies the
+  WHERE filter. With entries scoped per key, all 40 can belong to other keys, and the lookup
+  then finds nothing even though a match exists. A test pins this: with iterative scan off,
+  the HNSW plan finds 0 rows; with `hnsw.iterative_scan = relaxed_order` (pgvector 0.8, here
+  0.8.7) it keeps searching and finds the right one. Step 4's lookup sets that. On a small
+  table the planner skips HNSW for the btree index and an exact scan, which is right too.
