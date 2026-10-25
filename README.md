@@ -3,9 +3,9 @@
 An OpenAI-compatible proxy in front of multiple LLM providers, with fallback, per-key rate
 limits, exact and semantic caching, PII masking and a cost dashboard.
 
-Status: Phase 5 done (Groq + Gemini behind model aliases with retry and fallback, streaming,
-API keys, per-key rate limits, and a request log with the cost of every call). See
-[plan.md](plan.md) for the roadmap.
+Status: Phase 6 done (Groq + Gemini behind model aliases with retry and fallback, streaming,
+API keys, per-key rate limits, a request log with the cost of every call, and an exact-match
+response cache). See [plan.md](plan.md) for the roadmap.
 
 ## Quick start
 
@@ -59,7 +59,9 @@ headers for requests and tokens. A request's tokens are reserved up front (promp
 `max_tokens`, or 1024 without it) and corrected to the real usage when it ends. Limits are kept
 in memory, so run the gateway as a single process.
 
-Try it with the official `openai` SDK (needs `GROQ_API_KEY` and `GEMINI_API_KEY` in `.env`):
+Try it with the official `openai` SDK (needs `GROQ_API_KEY` and `GEMINI_API_KEY` in `.env`).
+It asks once, asks the same again (a cache hit), then asks the same as a stream (a hit replayed
+as SSE), and prints what the cache did and how long each call took:
 
 ```bash
 GATEWAY_API_KEY=gw-... uv run python scripts/smoke_openai_sdk.py                  # model "fast"
@@ -96,6 +98,28 @@ curl -sN localhost:8000/v1/chat/completions -H "Authorization: Bearer $GATEWAY_A
 Every provider streams: Groq passes its OpenAI-format chunks through, and Gemini's
 `streamGenerateContent` events are translated into the same format.
 
+### Caching
+
+A request with `temperature` set at or below `CACHE_MAX_TEMPERATURE` (0.2) is answered from the
+exact-match cache when the same request was answered before, within `CACHE_TTL_S` (24 h). "The
+same" means the same alias, messages and every option the model sees (`max_tokens`, `tools`,
+`stop`, `seed`...); `stream` and `user` don't count, so a streamed answer can serve a plain
+request and the other way round. A hit on a stream is replayed as SSE chunks. One cache serves
+every API key, stored in Postgres (`response_cache`).
+
+Every reply says what happened in `x-gateway-cache`: `exact` (a hit, a few milliseconds, no
+provider call, `x-gateway-attempts: 0`), `miss`, or `bypass`. Requests without a temperature,
+above the limit, or with `n` > 1 are bypassed, and so is any request sent with
+`x-gateway-cache: off`. A hit still counts against the key's requests per minute but uses no
+tokens, and its request-log row has `cache_status = 'exact'` and $0. Only finished text answers
+are stored: not errors, cut streams, tool calls or empty replies (a reasoning model that spends
+all of `max_tokens` thinking returns no text, and isn't cached).
+
+The demo commands above send no temperature, so they always reach the providers. To repeat a
+cacheable request without the cache, add `-H 'x-gateway-cache: off'`.
+
+Known limit: two identical requests that arrive at the same moment both call the provider.
+
 ## Layout
 
 ```
@@ -104,7 +128,7 @@ app/
   providers/    Groq, Gemini and mock adapters
   routing/      model registry, cheap-vs-strong router
   auth/         API keys, rate limits
-  cache/        exact + semantic cache
+  cache/        exact-match cache (semantic: Phase 7)
   guardrails/   PII masking
   usage/        request logs, cost
   config.py     settings from env / .env

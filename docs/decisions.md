@@ -638,3 +638,22 @@ One entry per phase: what was chosen, and why.
   concurrent duplicates. Not covered by a test: the client leaving during the lookup itself.
   The route reports it like any other cancellation (`client_disconnect`), which
   `test_request_logs` covers, but a cancellation can't be sent through the test transport.
+- **Phase 6 "done when", checked live (2026-10-25)** on a real server and Postgres, with a key
+  made by the CLI (revoked afterwards), through the openai SDK smoke script and curl:
+  - `fast` and `strong` on Groq: the first call a miss (~1 s), the same again an `exact` hit,
+    and the same as a stream an `exact` hit replayed as SSE. Hit rows have `latency_ms` of
+    2 to 4 ms, 0 tokens, $0 and 0 attempts, and name the model that first answered; the
+    openai SDK timed them at 9 to 20 ms end to end. Each miss's cost matched the list prices:
+    86 + 16 tokens on gpt-oss-20b is (86 x $0.075 + 16 x $0.30) / 1M = $0.00001125, and the
+    entry stored that cost.
+  - Stream first: a streamed miss, then a plain request and a stream for the same thing, both
+    `exact` in about 5 ms over curl. The replay on the wire: a role chunk, the text, the
+    finish_reason, the usage chunk (asked for), `[DONE]`, one id throughout.
+  - No temperature and `x-gateway-cache: off` were both `bypass`, and both called Groq.
+  - **Found live:** with a small `max_tokens`, gpt-oss-20b sometimes spends all of it
+    reasoning and returns empty text with `finish_reason: length` (60 and even 300 tokens on
+    one prompt). `storable` turns those away, so they're asked again every time rather than an
+    empty answer being served for 24 h. The provider still bills them: the rows show it.
+  - Not checked live: a Gemini answer through the cache. Its adapter maps Gemini's finish
+    reasons to `stop` and `length`, which `storable` accepts, and nothing else in the cache
+    depends on the provider.
