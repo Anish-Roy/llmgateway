@@ -1,13 +1,163 @@
 # LLM Gateway
 
-An OpenAI-compatible proxy in front of multiple LLM providers, with fallback, per-key rate
-limits, exact and semantic caching, PII masking and a cost dashboard.
+One OpenAI-compatible endpoint in front of Groq and Gemini. Apps keep using the plain `openai`
+SDK; the gateway adds API keys and per-key rate limits, PII masking, an exact and a semantic
+cache, a cheap-vs-strong router, retry and fallback between providers, and a log of what every
+call cost, shown on a dashboard.
 
-Status: Phase 11 done (Groq + Gemini behind model aliases with retry and fallback, streaming,
-API keys, per-key rate limits, a request log with the cost of every call, an exact-match and
-an opt-in semantic cache, PII masking, `model: "auto"`, which picks the cheap or the strong
-alias per request, a cost dashboard, and a replay benchmark: **the cache and the router cut
-cost by 33.6% on the replayed query log**). See [plan.md](plan.md) for the roadmap.
+**Measured, not claimed** (every number comes from a script in this repo):
+
+- **33.6% cheaper** on a replayed log of 378 prompts: the router and the caches together,
+  against sending everything to the strong model. [Replay results](#results)
+- **99.3% of requests served with the primary provider down**, against 0% without fallback.
+  [Fallback](#fallback-measured)
+- **2.8 ms p50** added by the gateway itself (caches off), 3.8 ms with the exact cache.
+- **The semantic cache is honest about its errors:** 7.1% of prompts hit at the chosen
+  threshold, and 14.8% of those hits answered a different question. That's why it's opt-in.
+  [Threshold chart](#results)
+- **PII round trip:** emails, phone, Aadhaar and card numbers never reach a provider, and
+  22 of 22 values came back in the replies on every model tested. [PII masking](#pii-masking)
+
+Built with Python 3.12, FastAPI, httpx, Postgres + pgvector, sentence-transformers and
+Streamlit. Design decisions, one entry per phase, are in [docs/decisions.md](docs/decisions.md).
+
+## Demo
+
+> **Demo video: not recorded yet.** The 2-minute recording will follow the script below; every
+> step runs from this repo today.
+
+1. **The plain openai SDK pointed at the gateway.** `scripts/smoke_openai_sdk.py` only changes
+   `base_url` and `api_key`:
+   `GATEWAY_API_KEY=gw-... uv run python scripts/smoke_openai_sdk.py`
+2. **Streaming.** The same script's third call streams; `x-gateway-cache` says whether it was
+   replayed from the cache.
+3. **A cache hit.** Its second call repeats the first: answered in milliseconds, $0, no
+   provider call (`x-gateway-cache: exact`, `x-gateway-attempts: 0`).
+4. **Killing a provider.** `model: "demo-fallback"` puts an always-failing provider first: the
+   reply comes from the backup, with `x-gateway-fallback: true` ([command](#models-and-fallback)).
+5. **The dashboard.** `uv run --env-file .env --group dashboard streamlit run dashboard/app.py`:
+   spend and savings per key, hit rate, fallback rate, latency.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    client["Any app<br/>(openai SDK, curl)"] -->|"POST /v1/chat/completions"| auth
+
+    subgraph gateway["Gateway: FastAPI, one process"]
+        direction LR
+        auth["API key<br/>auth"] --> limit["Rate limit<br/>(RPM + TPM)"]
+        limit --> pii["PII<br/>masking"]
+        pii --> auto["auto router<br/>(fast or strong)"]
+        auto --> exact["Exact<br/>cache"]
+        exact -->|miss| semantic["Semantic cache<br/>(opt-in)"]
+        semantic -->|miss| fallback["Retry and<br/>fallback"]
+    end
+
+    fallback --> groq["Groq"]
+    fallback --> gemini["Gemini"]
+    fallback --> mock["Mock<br/>(tests, demos)"]
+
+    db[("Postgres + pgvector<br/>api_keys, request_logs,<br/>response_cache, semantic_cache")]
+    auth -.-> db
+    exact -.-> db
+    semantic -.-> db
+    fallback -.->|"one log row per request"| db
+    dashboard["Streamlit<br/>dashboard"] --> db
+```
+
+One Postgres holds the keys, the request log and both caches (pgvector for the semantic one),
+so there's no separate vector store or cache server to run. The dashboard reads Postgres
+directly and doesn't need the gateway running.
+
+### Request lifecycle
+
+What happens to one `POST /v1/chat/completions`, in the order of
+[app/api/routes.py](app/api/routes.py):
+
+1. **Auth.** The `Authorization: Bearer gw-...` key is hashed and looked up. A bad or revoked
+   key gets OpenAI's 401, which the SDK raises as `AuthenticationError`.
+2. **Rate limit.** The request reserves one request and its tokens (prompt plus `max_tokens`)
+   from the key's buckets. Over either limit: 429 with `Retry-After`, which the SDK waits out
+   by itself. From here on, every request gets a row in the request log, rejected ones too.
+3. **PII masking.** Emails, phone, Aadhaar and card numbers become `[EMAIL_1]`-style
+   placeholders. Nothing after this step sees the real values: not the caches, the providers
+   or the log.
+4. **`auto` router.** `model: "auto"` becomes `fast` or `strong` by a few cheap rules (length,
+   code, keywords). It runs before the caches, so `auto` shares cache entries with the alias
+   it picks.
+5. **Exact cache.** The same alias, messages and options at a low temperature, answered in the
+   last 24 h: replied at once, for $0.
+6. **Semantic cache,** only when the request opts in with `x-gateway-cache: semantic`. A
+   similar enough question from the same key (cosine ≥ 0.95, same numbers) gets its answer.
+7. **Provider, with retry and fallback.** The alias's providers are tried in order. A timeout,
+   429 or 5xx is retried once where that helps, then the next provider is tried; a 400 isn't.
+   A stream can fall back until its first token, not after.
+8. **Reply.** Placeholders are swapped back for the real values, in plain and streamed replies.
+   Headers say what happened: `x-gateway-provider`, `-attempts`, `-fallback`, `-cache`,
+   `-route`, and OpenAI's `x-ratelimit-*`.
+9. **After the reply.** The reservation is corrected to the real token count; the answer is
+   stored in the caches if it's worth serving again; and a log row records the key, alias,
+   provider, model, tokens, cost at list price, latency, cache status, route and the kinds of
+   PII masked (never the values). These writes run in the background and can't fail the
+   request.
+
+## Results
+
+### Replay: what the cache and the router save
+
+All 378 prompts of [data/queries.jsonl](data/queries.jsonl) sent through the gateway three
+ways, on Groq at list price (2026-10-25). `fast` is gpt-oss-20b, `strong` gpt-oss-120b, at
+about half its price per token:
+
+| Mode | Cost (USD) | Saved | Cache hits | Sent to the cheap model | p50 latency |
+|---|--:|--:|--:|--:|--:|
+| baseline: everything to `strong`, no cache | 0.0805 | - | 0.0% | - | 1,525 ms |
+| cache: everything to `strong` | 0.0741 | 7.9% | 7.1% | - | 1,491 ms |
+| cache + router: `model: "auto"` | 0.0535 | **33.6%** | 6.6% | 67.5% | 1,056 ms |
+
+Most of the saving is the router. Quality isn't scored here, only cost and speed; the cheap
+model's answers were spot-checked in [docs/router_spotcheck.md](docs/router_spotcheck.md).
+The full table (false hits, p95, fallbacks), the gateway's own overhead and what the numbers
+mean are under [Replay benchmark](#replay-benchmark).
+
+### The semantic cache threshold
+
+![Hit rate and false-hit rate by threshold](docs/semantic_threshold.png)
+
+Hit rate and false-hit rate of the semantic cache at each similarity threshold, on the same
+378 prompts, which plant 96 rephrasings and 48 look-alike "trap" questions. No threshold is
+free of wrong answers: embeddings can't see word order ("100 miles to kilometres" and
+"100 kilometres to miles" score 0.993). Details under [Semantic cache](#semantic-cache).
+
+## Known limitations
+
+- **Not deployed yet:** no Dockerfile, CI, live URL or public demo key. It runs locally.
+- **One process:** rate-limit buckets live in memory, so the gateway runs as a single worker,
+  and a restart gives every key a full bucket.
+- **The semantic cache gives wrong answers** (14.8% of its hits on the replayed log), which is
+  why it's opt-in per request. [Details](#semantic-cache)
+- **The router is fitted to its own dataset,** and a weak answer from `fast` isn't retried on
+  `strong`. [Details](#cheap-vs-strong-router-auto)
+- **PII masking covers four kinds** (email, Indian phone, Aadhaar, card numbers), message text
+  only, not tool-call arguments. [Details](#pii-masking)
+- **No budgets, alerts or prompt-injection checks.** The dashboard shows spend; nothing stops it.
+- **No fallback mid-stream:** once part of an answer is sent, a provider failure ends the
+  stream with an error event. [Details](#streaming)
+- **Two identical requests at the same moment** both call the provider; the cache doesn't
+  hold the second one back.
+- **The benchmark's hit rate is the dataset's,** a quarter of which is planted rephrasings.
+  Real traffic would hit more or less often depending on how repetitive it is.
+
+## Why not LiteLLM?
+
+For production, use LiteLLM, Portkey or a hosted gateway: they already do fallbacks, caching,
+rate limits, budgets and spend tracking, across far more providers than this. This project
+exists to build those parts from scratch and measure them: how often a semantic cache answers
+the wrong question, how often a keyword router sends a hard prompt to the cheap model, whether
+masked PII survives a round trip through a model, and how much availability fallback buys. The
+answers, and what didn't work (a cross-encoder check that made the cache worse), are in
+[docs/decisions.md](docs/decisions.md).
 
 ## Quick start
 
@@ -20,6 +170,10 @@ uv run uvicorn app.main:app --reload      # http://localhost:8000/health
 uv run pytest
 uv run ruff check .
 ```
+
+## Reference
+
+### Models and fallback
 
 Clients ask for a model **alias**, not a vendor model. Aliases and the providers behind them
 live in [config/models.yaml](config/models.yaml):
@@ -46,6 +200,8 @@ your keys can actually use:
 uv run python -m scripts.check_models
 ```
 
+### API keys and rate limits
+
 Every `/v1` request needs a gateway API key (`/health` doesn't). Keys are created with a CLI
 that talks to Postgres directly; the plain key is printed once and only its hash is stored:
 
@@ -62,6 +218,8 @@ headers for requests and tokens. A request's tokens are reserved up front (promp
 `max_tokens`, or 1024 without it) and corrected to the real usage when it ends. Limits are kept
 in memory, so run the gateway as a single process.
 
+### Trying it with the openai SDK
+
 Try it with the official `openai` SDK (needs `GROQ_API_KEY` and `GEMINI_API_KEY` in `.env`).
 It asks once, asks the same again (a cache hit), then asks the same as a stream (a hit replayed
 as SSE), and prints what the cache did and how long each call took:
@@ -71,6 +229,8 @@ GATEWAY_API_KEY=gw-... uv run python scripts/smoke_openai_sdk.py                
 GATEWAY_API_KEY=gw-... uv run python scripts/smoke_openai_sdk.py --model strong
 GATEWAY_API_KEY=gw-... uv run python scripts/smoke_openai_sdk.py --model mock     # no provider keys needed
 ```
+
+### Watching fallback
 
 To watch fallback without any provider keys, ask for `demo-fallback`. Its first provider always fails
 with a 503 and is retried once, then the mock answers:
@@ -83,7 +243,9 @@ curl -si localhost:8000/v1/chat/completions -H "Authorization: Bearer $GATEWAY_A
 
 Look for `x-gateway-provider: mock`, `x-gateway-attempts: 3` and `x-gateway-fallback: true`.
 
-**How much fallback keeps working, measured.** `scripts/check_fallback.py` sends 1,000
+### Fallback, measured
+
+`scripts/check_fallback.py` sends 1,000
 requests (half streamed, caches off) to each alias in [config/outage.yaml](config/outage.yaml):
 mock providers that fail a set share of calls with a 503 before the first token. Each failing
 provider is tried alone, and with a backup (itself failing 10% of calls) behind it. Free, no
@@ -189,7 +351,7 @@ exact cache alone).
 | False-hit rate | **14.8%**: 4 of the 27 hits answered a different question |
 | Trap pairs answered wrongly | 4 of 48 (8.3%) |
 
-![Hit rate and false-hit rate by threshold](docs/semantic_threshold.png)
+The chart of hit rate and false-hit rate by threshold is under [Results](#the-semantic-cache-threshold).
 
 No threshold from 0.80 to 0.97 is free of wrong answers. Embedding similarity can't see word
 order: "convert a string to an integer in JavaScript" and "an integer to a string" score
